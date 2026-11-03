@@ -235,8 +235,8 @@ void SetupHost::refreshInstalled()
 
 bool SetupHost::launchApp(const QString &installDir)
 {
-    const QString exe = QDir(installDir).filePath(QStringLiteral("OrbbecSlicer.exe"));
-    if (!QFileInfo::exists(exe))
+    const QString exe = m_env ? m_env->appExecutablePath(installDir) : QString();
+    if (exe.isEmpty())
         return false;
     if (!m_env || !m_env->launch(exe))
         return false;

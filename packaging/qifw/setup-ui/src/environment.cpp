@@ -174,6 +174,17 @@ QVariantMap Environment::installedInfo() const
     return m;
 }
 
+QString Environment::appExecutablePath(const QString &installDir) const
+{
+    static const char *const names[] = {"ob-slicer.exe", "OrbbecSlicer.exe"};
+    for (const char *name : names) {
+        const QString path = QDir(installDir).filePath(QString::fromLatin1(name));
+        if (QFileInfo::exists(path))
+            return QDir::toNativeSeparators(path);
+    }
+    return QString();
+}
+
 bool Environment::launch(const QString &program, const QStringList &args) const
 {
     if (program.isEmpty() || !QFileInfo::exists(program))

@@ -26,7 +26,6 @@ namespace {
 // 文件关联的 ProgId 沿用原 NSIS 方案的命名（BrandedMaintenance.nsh），升级/卸载时能对上。
 constexpr QLatin1String kProgId3mf("OrbbecSlicer.3mf");
 constexpr QLatin1String kProgIdStl("OrbbecSlicer.stl");
-constexpr QLatin1String kAppExe("OrbbecSlicer.exe");
 
 QString classesKey(const QString &sub)
 {
@@ -477,29 +476,43 @@ void SetupEngine::applyInstallOptions()
     //     漏掉的这一项在 maintenancetool 移除目录前不会被清理）；
     //   - 文件关联：HKCU\Software\Classes，只改当前用户，不需要管理员权限。
     // 任一项失败只记日志，不把已成功的安装判成失败。
-    const QString exe = QDir(m_installDir).filePath(kAppExe);
-    if (!QFileInfo::exists(exe)) {
-        appendLog(QStringLiteral("安装目录中未找到 %1，跳过快捷方式与文件关联").arg(kAppExe));
+    // 主程序名随产品而异：当前 staging 里是 ob-slicer.exe（历史包是 OrbbecSlicer.exe）。
+    const QString exe = m_env ? m_env->appExecutablePath(m_installDir) : QString();
+    if (exe.isEmpty()) {
+        appendLog(QStringLiteral("安装目录中未找到主程序（ob-slicer.exe / OrbbecSlicer.exe），跳过快捷方式与文件关联"));
         return;
     }
+    const QString exeNative = QDir::toNativeSeparators(exe);
+
+    if (m_shortcutDesktop)
+        ensureDesktopShortcut(m_installDir);
 
     QSettings record(QStringLiteral("HKEY_CURRENT_USER\\Software\\Orbbec\\OrbbecSlicer\\Assoc"),
                      QSettings::NativeFormat);
-    const QString exeNative = QDir::toNativeSeparators(exe);
-
-    if (m_shortcutDesktop) {
-        const QString desktop = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
-        // IShellLinkW/Create shortcut via PowerShell-free path: 用 Windows Script Host 的
-        // WScript.Shell 需要额外依赖，这里直接调用 COM（ShellLink）。
-        const QString lnk = QDir(desktop).filePath(QStringLiteral("OrbbecSlicer.lnk"));
-        const bool ok = createShortcut(lnk, exeNative, QFileInfo(exe).absolutePath());
-        appendLog(ok ? QStringLiteral("已创建桌面快捷方式: %1").arg(QDir::toNativeSeparators(lnk))
-                     : QStringLiteral("创建桌面快捷方式失败: %1").arg(QDir::toNativeSeparators(lnk)));
-    }
-
     setAssociation(record, QStringLiteral(".3mf"), m_assoc3mf, exe);
     setAssociation(record, QStringLiteral(".stl"), m_assocStl, exe);
     appendLog(QStringLiteral("文件关联: .3mf=%1 .stl=%2").arg(m_assoc3mf).arg(m_assocStl));
+}
+
+bool SetupEngine::ensureDesktopShortcut(const QString &installDir)
+{
+    const QString exe = m_env ? m_env->appExecutablePath(installDir) : QString();
+    if (exe.isEmpty()) {
+        appendLog(QStringLiteral("无法创建桌面快捷方式：安装目录中没有主程序（%1）")
+                      .arg(QDir::toNativeSeparators(installDir)));
+        return false;
+    }
+    const QString desktop = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
+    if (desktop.isEmpty()) {
+        appendLog(QStringLiteral("无法创建桌面快捷方式：取不到桌面目录"));
+        return false;
+    }
+    const QString lnk = QDir(desktop).filePath(QStringLiteral("OrbbecSlicer.lnk"));
+    const bool ok = createShellLink(lnk, exe, QString(), QDir::toNativeSeparators(installDir));
+    appendLog(ok ? QStringLiteral("已创建桌面快捷方式: %1 → %2")
+                       .arg(QDir::toNativeSeparators(lnk), QDir::toNativeSeparators(exe))
+                 : QStringLiteral("创建桌面快捷方式失败: %1").arg(QDir::toNativeSeparators(lnk)));
+    return ok;
 }
 
 bool SetupEngine::createShellLink(const QString &lnkPath, const QString &target, const QString &args,

@@ -36,6 +36,10 @@ public:
     // 版本来源：优先读注册表，退化到安装目录中的 maintenancetool.exe。
     Q_INVOKABLE QVariantMap installedInfo() const;
 
+    // 安装目录里的主程序名随产品而异（当前是 ob-slicer.exe，历史包是 OrbbecSlicer.exe）。
+    // 返回第一个存在的可执行文件；都不存在时返回空串。
+    Q_INVOKABLE QString appExecutablePath(const QString &installDir) const;
+
     // 启动已安装的主程序；成功返回 true。
     Q_INVOKABLE bool launch(const QString &program, const QStringList &args = {}) const;
 

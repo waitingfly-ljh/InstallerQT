@@ -58,6 +58,7 @@ struct LaunchPlan {
     bool checkSteps = false;
     bool checkWindow = false;
     QString checkLaunchDir;
+    QString checkShortcutDir;
 };
 
 LaunchPlan parseArgs(QGuiApplication &app)
@@ -110,6 +111,8 @@ LaunchPlan parseArgs(QGuiApplication &app)
             plan.uninstallerPath = own.at(++i);
         } else if (a == QStringLiteral("--check-launch") && i + 1 < own.size()) {
             plan.checkLaunchDir = own.at(++i);
+        } else if (a == QStringLiteral("--check-desktop-shortcut") && i + 1 < own.size()) {
+            plan.checkShortcutDir = own.at(++i);
         } else if (a == QStringLiteral("--view") && i + 1 < own.size()) {
             plan.smokeView = own.at(++i);
         } else if (a == QStringLiteral("--dir") && i + 1 < own.size()) {
@@ -379,6 +382,19 @@ int main(int argc, char *argv[])
     }
 
 
+    // --selftest --check-desktop-shortcut <目录>：验证能在桌面创建指向主程序的快捷方式。
+    if (plan.mode == StartMode::SelfTest && !plan.checkShortcutDir.isEmpty()) {
+        const bool created = host.engine()->ensureDesktopShortcut(plan.checkShortcutDir);
+        const QString lnk = QDir(QStandardPaths::writableLocation(QStandardPaths::DesktopLocation))
+                                .filePath(QStringLiteral("OrbbecSlicer.lnk"));
+        const bool exists = QFileInfo::exists(lnk);
+        qInfo().noquote() << QStringLiteral("SELFTEST 桌面快捷方式: 创建=%1 存在=%2 路径=%3")
+                                 .arg(created ? QStringLiteral("true") : QStringLiteral("false"),
+                                      exists ? QStringLiteral("true") : QStringLiteral("false"),
+                                      QDir::toNativeSeparators(lnk));
+        return (created && exists) ? 0 : 2;
+    }
+
     // --selftest --check-launch <目录>：验证"立即启动"能拉起安装目录里的主程序。
     if (plan.mode == StartMode::SelfTest && !plan.checkLaunchDir.isEmpty()) {
         const bool ok = host.launchApp(plan.checkLaunchDir);
@@ -430,9 +446,6 @@ int main(int argc, char *argv[])
                            && !plan.checkWindow)
                               ? QStringLiteral("LoadEntry")
                               : QStringLiteral("App");
-    // 用 qrc 绝对路径加载入口：从 :/SetupUi/ 打开 QML 时，引擎会把该目录当作
-    // 隐式导入路径，`import SetupUi` 因此能找到 :/SetupUi/qmldir。
-    // loadFromModule() 只在 :/qt/qml/SetupUi/ 下查找 qmldir（RESOURCE_PREFIX 是 /）。
     qml.load(QUrl(QStringLiteral("qrc:/SetupUi/%1.qml").arg(entry)));
 
     if (qmlFailed)

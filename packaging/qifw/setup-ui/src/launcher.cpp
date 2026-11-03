@@ -99,7 +99,10 @@ bool runAndWait(const std::wstring &exe, const std::wstring &args, DWORD &exitCo
     PROCESS_INFORMATION pi{};
     std::vector<wchar_t> mutableCmd(cmd.begin(), cmd.end());
     mutableCmd.push_back(L'\0');
-    if (!CreateProcessW(exe.c_str(), mutableCmd.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+    // CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP：与控制台脱离，
+    // 父进程所在控制台收到的 Ctrl+C/Ctrl+Break 不会把 tar 一起终止（0xC000013A）。
+    if (!CreateProcessW(exe.c_str(), mutableCmd.data(), nullptr, nullptr, FALSE,
+                        CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP, nullptr, nullptr, &si, &pi)) {
         return false;
     }
     WaitForSingleObject(pi.hProcess, INFINITE);
@@ -123,14 +126,28 @@ int runLauncher()
         return 2;
     }
 
+    // --silent：失败时不要弹 MessageBox（打包/CI 环境没有人点）。
+    bool silent = false;
+    {
+        int argc = 0;
+        LPWSTR *argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+        for (int i = 1; argv && i < argc; ++i) {
+            if (wcscmp(argv[i], L"--silent") == 0)
+                silent = true;
+        }
+        if (argv)
+            LocalFree(argv);
+    }
+
     long long offset = 0, length = 0;
     unsigned char hash[32] = {};
     std::string version;
     const bool packaged = readTrailer(self, file, offset, length, hash, version);
     if (!packaged) {
         CloseHandle(file);
-        MessageBoxW(nullptr, L"这个程序缺少内嵌负载，无法安装。请重新下载完整的安装程序。",
-                    L"OrbbecSlicer 安装程序", MB_ICONERROR | MB_OK);
+        if (!silent)
+            MessageBoxW(nullptr, L"这个程序缺少内嵌负载，无法安装。请重新下载完整的安装程序。",
+                        L"OrbbecSlicer 安装程序", MB_ICONERROR | MB_OK);
         return 2;
     }
 
@@ -198,8 +215,9 @@ int runLauncher()
         if (!runAndWait(tarExe, tarArgs, tarCode) || tarCode != 0) {
             CloseHandle(file);
             logLine(L"tar 解压失败: %lu", tarCode);
-            MessageBoxW(nullptr, L"安装程序解压失败，请查看 %TEMP%\\OrbbecSlicerSetupLauncher.log。",
-                        L"OrbbecSlicer 安装程序", MB_ICONERROR | MB_OK);
+            if (!silent)
+                MessageBoxW(nullptr, L"安装程序解压失败，请查看 %TEMP%\\OrbbecSlicerSetupLauncher.log。",
+                            L"OrbbecSlicer 安装程序", MB_ICONERROR | MB_OK);
             return 2;
         }
         DeleteFileW(zip.c_str());
@@ -215,8 +233,9 @@ int runLauncher()
     const bool uninstallerMode = !hasPayload;
     if (GetFileAttributesW(uiExe.c_str()) == INVALID_FILE_ATTRIBUTES) {
         logLine(L"释放结果不完整: ui=%ls", uiExe.c_str());
-        MessageBoxW(nullptr, L"安装程序解压后缺少文件，请重新下载。", L"OrbbecSlicer 安装程序",
-                    MB_ICONERROR | MB_OK);
+        if (!silent)
+            MessageBoxW(nullptr, L"安装程序解压后缺少文件，请重新下载。", L"OrbbecSlicer 安装程序",
+                        MB_ICONERROR | MB_OK);
         return 2;
     }
 
@@ -244,8 +263,9 @@ int runLauncher()
     DWORD exitCode = 1;
     if (!runAndWait(uiExe, args, exitCode)) {
         logLine(L"无法启动界面: %ls", uiExe.c_str());
-        MessageBoxW(nullptr, L"无法启动安装界面，请查看 %TEMP%\\OrbbecSlicerSetupLauncher.log。",
-                    L"OrbbecSlicer 安装程序", MB_ICONERROR | MB_OK);
+        if (!silent)
+            MessageBoxW(nullptr, L"无法启动安装界面，请查看 %TEMP%\\OrbbecSlicerSetupLauncher.log。",
+                        L"OrbbecSlicer 安装程序", MB_ICONERROR | MB_OK);
         return 2;
     }
 
@@ -262,8 +282,8 @@ int runLauncher()
         PROCESS_INFORMATION pi{};
         std::vector<wchar_t> cmd(commandLine.begin(), commandLine.end());
         cmd.push_back(L'\0');
-        if (!CreateProcessW(cmdExe.c_str(), cmd.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr,
-                            nullptr, &si, &pi))
+        if (!CreateProcessW(cmdExe.c_str(), cmd.data(), nullptr, nullptr, FALSE,
+                            CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP, nullptr, nullptr, &si, &pi))
             return;
         if (waitMs)
             WaitForSingleObject(pi.hProcess, 5000);

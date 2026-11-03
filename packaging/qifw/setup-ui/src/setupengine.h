@@ -33,6 +33,8 @@ public:
 
     // overwrite=false 且目标目录已有内容时，引擎追加 -x 强制覆盖（QIFW 默认拒绝）。
     Q_INVOKABLE void startInstall(const QString &targetDir, const QVariantMap &options);
+    // 桌面快捷方式：解析安装目录里的主程序并创建 <桌面>\OrbbecSlicer.lnk。
+    Q_INVOKABLE bool ensureDesktopShortcut(const QString &installDir);
     Q_INVOKABLE void startUninstall(const QString &installDir, bool removeAllData, bool keepDataDir);
     Q_INVOKABLE void cancel();
 
