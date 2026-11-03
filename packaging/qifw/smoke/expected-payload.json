@@ -1,0 +1,25 @@
+{
+  "description": "冒烟包 data/ 的固定预期清单；run-smoke.ps1 用它校验安装结果，缺文件时报出具体相对路径。",
+  "files": [
+    {
+      "path": "payload/README.txt",
+      "size": 35,
+      "sha256": "adea8dfcc3abe0c59f8a45d07274aa9f5db1fbae09bf37603bf98e99593ad260"
+    },
+    {
+      "path": "payload/data/blob.bin",
+      "size": 256,
+      "sha256": "40aff2e9d2d8922e47afd4648e6967497158785fbd1da870e7110266bf944880"
+    },
+    {
+      "path": "payload/data/settings.json",
+      "size": 58,
+      "sha256": "07fdffb3a36e4fe881dae9a592e7134c7d6c53249aee0a53028d1fd7bfb036f1"
+    },
+    {
+      "path": "payload/docs/notes.ini",
+      "size": 35,
+      "sha256": "574076b543aaf192e1100d6e09242041788c25cc175035f0a93d10f7e23519f1"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package>
+    <DisplayName>QIFW Smoke Payload</DisplayName>
+    <Description>OrbbecSlicer QIFW 冒烟包：验证 binarycreator 生成 → 静默安装 → 校验 → 静默卸载 的完整回路。</Description>
+    <Version>0.0.1</Version>
+    <ReleaseDate>2026-10-30</ReleaseDate>
+    <Name>com.orbbec.smoke</Name>
+
+    <!-- 冒烟包必须安装，用户不可取消勾选 -->
+    <Default>true</Default>
+    <ForcedInstallation>true</ForcedInstallation>
+
+    <!-- data/ 下的目录结构原样保留，最终装到 <TargetDir>/payload/...；
+         run-smoke.ps1 逐文件比对哈希 -->
+    <Script>installscript.qs</Script>
+</Package>

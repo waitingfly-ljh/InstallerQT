@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Installer>
+    <Name>OrbbecSlicer QIFW Smoke</Name>
+    <Version>0.0.1</Version>
+    <Title>OrbbecSlicer QIFW Smoke Test</Title>
+    <Publisher>Orbbec</Publisher>
+    <StartMenuDir>OrbbecSlicerQifwSmoke</StartMenuDir>
+    <TargetDir>@HomeDir@/OrbbecSlicerQifwSmoke</TargetDir>
+    <!-- 离线安装器：不配置 RemoteRepositories -->
+    <!-- 不设 InstallerApplicationIcon：config/ 下没有 .ico 时会静默沿用 installerbase 默认图标 -->
+    <AllowNonAsciiCharacters>true</AllowNonAsciiCharacters>
+    <AllowSpaceInPath>true</AllowSpaceInPath>
+</Installer>

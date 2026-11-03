@@ -1,0 +1,59 @@
+﻿{
+  "schemaVersion": 1,
+  "description": "OrbbecSlicer QIFW 打包工具链清单。所有工具获取到 toolchainRoot（仓库内相对路径），不写到本仓库之外。",
+  "platform": "windows_x86",
+  "architecture": "win64_msvc2022_64",
+  "toolchainRoot": "packaging/qifw/toolchain/qt",
+  "qt": {
+    "version": "6.8.3",
+    "architecture": "win64_msvc2022_64",
+    "archDir": "msvc2022_64",
+    "installDir": "packaging/qifw/toolchain/qt/6.8.3/msvc2022_64",
+    "base": "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/",
+    "packageFolder": "qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64",
+    "archiveTag": "6.8.3-0-202503201308",
+    "modules": [],
+    "note": "aqt 3.3.0 的下载器在 download.qt.io 302 跳到 CDN 时会对大归档 read timeout，故 Qt 由 fetch-qt-archives.ps1 用 curl 并发下载 + 官方 sha256 核验 + py7zr 解包；等价于 aqt install-qt 的结果。"
+  },
+  "ifw": {
+    "version": "4.11.0",
+    "installDir": "packaging/qifw/toolchain/qt/Tools/QtInstallerFramework/4.11.0",
+    "packageId": "qt.tools.ifw.411",
+    "archive": "4.11.0-0-202603231357ifw-win-x64.7z",
+    "archiveUrl": "https://download.qt.io/online/qtsdkrepository/windows_x86/ifw/tools_ifw_411/qt.tools.ifw.411/4.11.0-0-202603231357ifw-win-x64.7z",
+    "archiveSha256": "c47201c4f6a82a8b607daa245237f40831d78425e904edd1514b71fd17efefc1",
+    "note": "QIFW 4.11 只在 windows_x86/ifw/ channel 发布，且 aqt 的 target 白名单不含 ifw，无法用 aqt install-tool 获取；改由 fetch-ifw.ps1 直接用 archiveUrl 下载。"
+  },
+  "tools": [
+    {
+      "name": "binarycreator",
+      "relativePath": "Tools/QtInstallerFramework/4.11.0/bin/binarycreator.exe",
+      "versionArgs": ["--help"],
+      "required": true,
+      "note": "不提供 --version；--help 输出 Usage 且退出 0，版本以目录名（manifest.ifw.version）为准"
+    },
+    {
+      "name": "installerbase",
+      "relativePath": "Tools/QtInstallerFramework/4.11.0/bin/installerbase.exe",
+      "versionArgs": ["--help"],
+      "required": true,
+      "note": "无参运行会打印 'No marker found' 并以非 0 退出，那是正常行为，不代表不可用"
+    },
+    {
+      "name": "archivegen",
+      "relativePath": "Tools/QtInstallerFramework/4.11.0/bin/archivegen.exe",
+      "versionArgs": ["--help"],
+      "required": true
+    },
+    {
+      "name": "repogen",
+      "relativePath": "Tools/QtInstallerFramework/4.11.0/bin/repogen.exe",
+      "versionArgs": ["--help"],
+      "required": true
+    }
+  ],
+  "verification": {
+    "checkedAt": "2026-10-30",
+    "note": "所有归档均以官方 .sha256 核对通过后才解包。"
+  }
+}

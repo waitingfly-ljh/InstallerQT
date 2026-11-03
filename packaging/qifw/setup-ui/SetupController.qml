@@ -1,0 +1,177 @@
+﻿pragma ComponentBehavior: Bound
+import QtQuick
+
+// 安装器界面状态：页面流、安装选项、已安装版本判定。
+// 界面只在这里决定"显示哪一屏"，实际安装/卸载由 Host.engine 执行。
+QtObject {
+    id: ctl
+
+    // --- 页面流 ---
+    // options | maintenance | progress | complete | failure | dataScope | confirm | uninstalled
+    property string view: "options"
+    property bool uninstalling: false
+    readonly property var installSteps: [
+        { "label": qsTr("安装设置"), "state": installStepState(0) },
+        { "label": qsTr("安装过程"), "state": installStepState(1) },
+        { "label": qsTr("安装完成"), "state": installStepState(2) }
+    ]
+    function installStepState(i) {
+        if (flowView === "options") return i === 0 ? "active" : "pending"
+        if (flowView === "progress") return i === 0 ? "done" : i === 1 ? "active" : "pending"
+        if (flowView === "failure") return i === 0 ? "done" : i === 1 ? "active" : "pending"
+        // complete（含维护完成）都在最后一屏
+        return i < 2 ? "done" : "active"
+    }
+    readonly property var uninstallSteps: [
+        { "label": qsTr("数据范围"), "state": uninstallStepState(0) },
+        { "label": qsTr("确认卸载"), "state": uninstallStepState(1) },
+        { "label": qsTr("卸载完成"), "state": uninstallStepState(2) }
+    ]
+    function uninstallStepState(i) {
+        if (flowView === "dataScope") return i === 0 ? "active" : "pending"
+        if (flowView === "confirm") return i === 0 ? "done" : i === 1 ? "active" : "pending"
+        if (flowView === "progress") return i < 2 ? "done" : "active"
+        if (flowView === "uninstalled") return i < 2 ? "done" : "active"
+        // 卸载过程中失败：停在第二步
+        return i < 2 ? "done" : "pending"
+    }
+    readonly property var steps: uninstalling ? uninstallSteps : installSteps
+
+    // 截图（--view）专用的流程视图：截图模式下引擎没在跑，ctl.view 由 App.qml 按 --view 摆位。
+    // 侧栏步骤表以它为准，而不是直接看 ctl.view：截图外壳的页面靠 StackLayout 的 currentIndex
+    // 显示，页面自身的 visible 被设成 false 不生效（见 App.qml applyShotState）。
+    // 普通启动里 setView() 从不被调用，它恒等于 view。
+    property string flowView: view
+
+    // 内容区 StackLayout 的 currentIndex（Main.qml 与截图外壳共用这一个映射）。
+    // 截图时 App.qml 调 setView() 摆位，侧栏步骤表也按 flowView 算。
+    function setView(v) {
+        view = v
+        flowView = v
+    }
+    readonly property int viewIndex: {
+        const v = flowView
+        if (v === "options") return 0
+        if (v === "maintenance") return 1
+        if (v === "progress") return 2
+        if (v === "complete") return 3
+        if (v === "failure") return 4
+        if (v === "dataScope") return 5
+        if (v === "confirm") return 6
+        if (v === "uninstalled") return 7
+        return 0
+    }
+
+    // --- 安装选项 ---
+    property QtObject installOptions: QtObject {
+        property string installDir: ""
+        property bool shortcutDesktop: true
+        property bool assoc3mf: true
+        property bool assocStl: false
+        property bool launchAfterInstall: true
+    }
+    function resetOptions() {
+        installOptions.installDir = Host.normalizeDirPath(Host.defaultInstallDir())
+        installOptions.shortcutDesktop = true
+        installOptions.assoc3mf = true
+        installOptions.assocStl = false
+        installOptions.launchAfterInstall = true
+    }
+
+    // --- 已安装版本 ---
+    property var installed: ({ "installed": false, "version": "", "installDir": "" })
+    property string targetVersion: Host.payloadVersion
+    property bool riskAcknowledged: false
+    readonly property string mode: {
+        if (!installed.installed) return "fresh"
+        const a = compareVersions(targetVersion, installed.version)
+        return a === 0 ? "repair" : a > 0 ? "upgrade" : "downgrade"
+    }
+    function compareVersions(a, b) {
+        const pa = String(a || "").split(/[.-]/).map(x => parseInt(x, 10) || 0)
+        const pb = String(b || "").split(/[.-]/).map(x => parseInt(x, 10) || 0)
+        for (let i = 0; i < Math.max(pa.length, pb.length); ++i) {
+            const x = pa[i] || 0, y = pb[i] || 0
+            if (x !== y) return x > y ? 1 : -1
+        }
+        return 0
+    }
+
+    // --- 失败与卸载 ---
+    property int failureCode: -1
+    property string failureCodeText: ""
+    property string failureMessage: ""
+    property bool removeAllData: false
+    property bool keepDataDir: false
+    property bool cancelled: false
+
+    // 从系统卸载入口启动（--uninstall）：跳过维护判断，直接进入卸载流程。
+    readonly property bool uninstallOnly: typeof uninstallMode !== "undefined" && uninstallMode === true
+    readonly property string installDirOverride: (typeof installDirPath !== "undefined"
+                                                  && installDirPath !== null) ? String(installDirPath) : ""
+
+    function start() {
+        refreshInstalled()
+        if (uninstallOnly) {
+            const dir = installDirOverride.length > 0 ? installDirOverride : installed.installDir
+            installed = { "installed": true, "version": installed.version, "installDir": dir }
+            uninstalling = true
+            view = "dataScope"
+            return
+        }
+        resetOptions()
+        view = installed.installed ? "maintenance" : "options"
+    }
+
+    function refreshInstalled() {
+        Host.refreshInstalled()
+        installed = Host.installed
+    }
+
+    function beginInstall() {
+        cancelled = false
+        // 目录按规范化形式落盘（输入框里可能是 C:/x/ 这种写法）。
+        installOptions.installDir = Host.normalizeDirPath(installOptions.installDir)
+        view = "progress"
+        Host.engine.startInstall(installOptions.installDir, {
+            "shortcutDesktop": installOptions.shortcutDesktop,
+            "assoc3mf": installOptions.assoc3mf,
+            "assocStl": installOptions.assocStl,
+            "launchAfterInstall": installOptions.launchAfterInstall
+        })
+    }
+
+    function onEngineFinished(code, summary) {
+        if (code === 0) {
+            if (uninstalling) {
+                uninstalling = false
+                view = "uninstalled"
+            } else {
+                refreshInstalled()
+                view = "complete"
+            }
+            return
+        }
+        uninstalling = false
+        failureCode = code
+        failureCodeText = code > 0 ? String(code) : ""
+        failureMessage = summary
+        view = "failure"
+    }
+
+    function onEngineCancelled() {
+        uninstalling = false
+        cancelled = true
+        view = installed.installed ? "maintenance" : "options"
+    }
+
+    function retry() {
+        view = installed.installed ? "maintenance" : "options"
+    }
+
+    function beginUninstall() {
+        uninstalling = true
+        view = "progress"
+        Host.engine.startUninstall(installed.installDir, removeAllData, keepDataDir)
+    }
+}
