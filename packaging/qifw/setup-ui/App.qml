@@ -103,7 +103,7 @@ Item {
 
                 OptionsPage {
                     id: optionsPage
-                    installDir: "C:\\Program Files\\Orbbec\\OrbbecSlicer"
+                    installParentDir: "C:\\Program Files"
                     shortcutDesktop: true
                     assoc3mf: true
                     assocStl: false
@@ -150,16 +150,18 @@ Item {
                 // 侧栏要跟着变成 done/active/pending。
                 installSteps = Qt.binding(() => shotCtl.installSteps)
                 uninstallSteps = Qt.binding(() => shotCtl.uninstallSteps)
-                optionsPage.installDir = Qt.binding(() => shotCtl.installOptions.installDir)
+                optionsPage.installParentDir = Qt.binding(() => shotCtl.installOptions.installParentDir)
                 optionsPage.shortcutDesktop = Qt.binding(() => shotCtl.installOptions.shortcutDesktop)
                 optionsPage.assoc3mf = Qt.binding(() => shotCtl.installOptions.assoc3mf)
                 optionsPage.assocStl = Qt.binding(() => shotCtl.installOptions.assocStl)
                 optionsPage.launchAfterInstall = Qt.binding(() => shotCtl.installOptions.launchAfterInstall)
-                // 截图外壳上 applyShotState 之后，optionsPage.installDir 是绑到 ctl 上的；
-                // 拖后腿的只有"ctl 还没给默认目录"：ctl 的 Component.onCompleted 比截图外壳晚跑。
+                // 截图外壳上 applyShotState 之后，optionsPage.installParentDir 是绑到 ctl 上的；
+                // 拖后腿的只有"ctl 还没给默认值"：ctl 的 Component.onCompleted 比截图外壳晚跑。
                 // 那时仍是空串，就用与 SetupController.resetOptions 相同的默认值兜底。
-                if (shotCtl.installOptions.installDir.length === 0)
-                    shotCtl.installOptions.installDir = Host.normalizeDirPath(Host.defaultInstallDir())
+                if (shotCtl.installOptions.installParentDir.length === 0) {
+                    shotCtl.installOptions.installParentDir = Host.normalizeDirPath(Host.defaultInstallParent())
+                    shotCtl.installOptions.installDir = Host.installDirForParent(shotCtl.installOptions.installParentDir)
+                }
             }
         }
     }

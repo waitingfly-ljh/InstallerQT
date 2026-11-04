@@ -213,6 +213,21 @@ QString SetupHost::defaultInstallDir()
     return m_env ? m_env->defaultInstallDir() : QString();
 }
 
+QString SetupHost::defaultInstallParent()
+{
+    return m_env ? m_env->defaultInstallParent() : QString();
+}
+
+QString SetupHost::installDirForParent(const QString &parent)
+{
+    return m_env ? m_env->installDirForParent(parent) : QString();
+}
+
+QString SetupHost::installParentForDir(const QString &installDir)
+{
+    return m_env ? m_env->installParentForDir(installDir) : QString();
+}
+
 QString SetupHost::probeDirectory(const QString &path)
 {
     return m_env ? m_env->probeDirectory(path) : QString();

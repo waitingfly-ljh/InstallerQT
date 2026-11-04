@@ -99,18 +99,18 @@ ApplicationWindow {
                 id: optionsPage
                 objectName: "optionsPage"
                 visible: ctl.view === "options"
-                installDir: ctl.installOptions.installDir
+                installParentDir: ctl.installOptions.installParentDir
                 shortcutDesktop: ctl.installOptions.shortcutDesktop
                 assoc3mf: ctl.installOptions.assoc3mf
                 assocStl: ctl.installOptions.assocStl
                 launchAfterInstall: ctl.installOptions.launchAfterInstall
                 notice: ctl.cancelled ? qsTr("安装已取消，已写入的文件已清除。") : ""
-                onDirChanged: (d) => ctl.installOptions.installDir = d
+                onDirChanged: (d) => ctl.installOptions.installParentDir = d
                 onOptionChanged: (key, value) => ctl.installOptions[key] = value
                 onInstallRequested: {
                     // 只输入、没按回车就点安装时，输入框文字已经通过 onDirChanged 同步；
-                    // 这里再补一次，保证控制器拿到的是要安装的目录。
-                    ctl.installOptions.installDir = optionsPage.installDir
+                    // 这里再补一次，保证控制器拿到的是要安装的位置。
+                    ctl.installOptions.installParentDir = optionsPage.installParentDir
                     ctl.beginInstall()
                 }
             }
@@ -126,6 +126,7 @@ ApplicationWindow {
                 onCancelRequested: Qt.quit()
                 onProceedRequested: {
                     ctl.installOptions.installDir = Host.normalizeDirPath(ctl.installed.installDir)
+                    ctl.installOptions.installParentDir = Host.installParentForDir(ctl.installed.installDir)
                     ctl.beginInstall()
                 }
             }

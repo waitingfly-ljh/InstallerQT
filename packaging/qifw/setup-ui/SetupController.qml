@@ -64,6 +64,8 @@ QtObject {
 
     // --- 安装选项 ---
     property QtObject installOptions: QtObject {
+        // 界面收集/显示的是父文件夹；installDir 是由它拼出的最终安装目录（引擎入参）。
+        property string installParentDir: ""
         property string installDir: ""
         property bool shortcutDesktop: true
         property bool assoc3mf: true
@@ -71,7 +73,8 @@ QtObject {
         property bool launchAfterInstall: true
     }
     function resetOptions() {
-        installOptions.installDir = Host.normalizeDirPath(Host.defaultInstallDir())
+        installOptions.installParentDir = Host.normalizeDirPath(Host.defaultInstallParent())
+        installOptions.installDir = Host.installDirForParent(installOptions.installParentDir)
         installOptions.shortcutDesktop = true
         installOptions.assoc3mf = true
         installOptions.assocStl = false
@@ -147,8 +150,25 @@ QtObject {
     function beginInstall() {
         runMode = mode
         cancelled = false
-        // 目录按规范化形式落盘（输入框里可能是 C:/x/ 这种写法）。
-        installOptions.installDir = Host.normalizeDirPath(installOptions.installDir)
+        if (installed.installed) {
+            // 维护（修复/升级/降级）必须落回原来的安装目录：即使历史上装成过自定义目录名，
+            // 也不能因为父文件夹语义被改到 <parent>\OrbbecSlicer。
+            installOptions.installDir = Host.normalizeDirPath(installOptions.installDir)
+        } else {
+            // 全新安装：由父文件夹算出最终目录（"D:"、尾部斜杠等写法在这里统一）。
+            const parent = installOptions.installParentDir.length > 0
+                         ? installOptions.installParentDir
+                         : Host.defaultInstallParent()
+            installOptions.installParentDir = Host.normalizeDirPath(parent)
+            installOptions.installDir = Host.installDirForParent(installOptions.installParentDir)
+        }
+        if (installOptions.installDir.length === 0) {
+            failureCode = 2
+            failureCodeText = "2"
+            failureMessage = qsTr("安装位置为空，请重新填写。")
+            view = "failure"
+            return
+        }
         view = "progress"
         Host.engine.startInstall(installOptions.installDir, {
             "shortcutDesktop": installOptions.shortcutDesktop,

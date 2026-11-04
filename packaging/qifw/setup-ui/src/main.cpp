@@ -11,16 +11,20 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QJSValue>
+#include <QQuickWindow>
 #include <QStandardPaths>
 #include <QWindow>
 #include <QTimer>
 #include <QDebug>
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
 #ifdef ORBBEC_SETUP_SHOT
 #include <QImage>
 #include <QQmlEngine>
 #include <QQmlPropertyMap>
-#include <QQuickWindow>
 #include <QScreen>
 #include <QWindow>
 #endif
@@ -222,8 +226,11 @@ void runSelftestDrive(QQmlApplicationEngine &qml, SetupHost &host, const LaunchP
         }
     }
     QObject *options = ctl ? ctl->property("installOptions").value<QObject *>() : nullptr;
-    if (options && !plan.smokeDir.isEmpty())
-        options->setProperty("installDir", plan.smokeDir);
+    if (options && !plan.smokeDir.isEmpty()) {
+        // --dir 传的是"父文件夹"（与界面语义一致），最终目录由宿主按同一规则拼出。
+        options->setProperty("installParentDir", plan.smokeDir);
+        options->setProperty("installDir", host.installDirForParent(plan.smokeDir));
+    }
 
     QObject *page = root->findChild<QObject *>(QStringLiteral("optionsPage"));
     if (!page) {
@@ -234,9 +241,11 @@ void runSelftestDrive(QQmlApplicationEngine &qml, SetupHost &host, const LaunchP
 
     const bool canInstall = page->property("canInstall").toBool();
     const QString problem = page->property("dirProblem").toString();
-    const QString dir = page->property("installDir").toString();
-    qInfo().noquote() << QStringLiteral("SELFTEST 目录=[%1] 按钮可用=%2 提示=%3")
-                             .arg(QDir::toNativeSeparators(dir))
+    const QString dir = page->property("installParentDir").toString();
+    // 父文件夹 → 最终安装目录：--check-options 用它断言拼接规则（不需要真的安装）。
+    const QString effectiveDir = page->property("effectiveInstallDir").toString();
+    qInfo().noquote() << QStringLiteral("SELFTEST 位置=[%1] 安装到=[%2] 按钮可用=%3 提示=%4")
+                             .arg(QDir::toNativeSeparators(dir), QDir::toNativeSeparators(effectiveDir))
                              .arg(canInstall ? QStringLiteral("true") : QStringLiteral("false"), problem);
     qInfo().noquote() << QStringLiteral("SELFTEST 目录检查完成: %1 视图=%2")
                              .arg(QString::fromLatin1(root->metaObject()->className()),
@@ -309,6 +318,50 @@ void runSelftestDrive(QQmlApplicationEngine &qml, SetupHost &host, const LaunchP
 }
 
 } // namespace
+
+// 无边框窗口（Qt.FramelessWindowHint）让 Qt 不设 WS_MINIMIZEBOX，Windows 因此不把
+// 任务栏按钮点击翻译成最小化。这里补上该样式位，恢复"点任务栏最小化、再点还原"的
+// 原生行为；不加 WS_MAXIMIZEBOX —— 产品不允许最大化，加了会引入多余的系统手势。
+// 自绘标题栏的 showMinimized() 走 Qt 的窗口状态接口，与本样式位无关，不受影响。
+static void restoreTaskbarMinimize(QQuickWindow *window)
+{
+    if (!window)
+        return;
+#ifdef Q_OS_WIN
+    // winId() 在原生窗口尚未创建时会立即创建它；QML 里 visible: true 时通常已存在。
+    const HWND hwnd = reinterpret_cast<HWND>(window->winId());
+    if (!hwnd)
+        return;
+    const LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+    if (style & WS_MINIMIZEBOX)
+        return;
+    SetWindowLongPtrW(hwnd, GWL_STYLE, style | WS_MINIMIZEBOX);
+#else
+    Q_UNUSED(window)
+#endif
+}
+
+// 对当前所有顶层 QQuickWindow 补样式位。窗口不是 QML 根对象（App.qml 的根是 Item，
+// 窗口是内部的 ApplicationWindow），所以按 topLevelWindows() 找，而不是 rootObjects()。
+// 只处理一次：打标记后不再重复；之后连接 visibilityChanged，覆盖 Qt 在显示/状态切换时
+// 重新设置窗口样式的情况。
+static void applyTaskbarMinimizeToWindows()
+{
+#ifdef Q_OS_WIN
+    static const char *kHooked = "_orbbecTaskbarMinimizeHooked";
+    const auto windows = QGuiApplication::topLevelWindows();
+    for (QWindow *w : windows) {
+        auto *qw = qobject_cast<QQuickWindow *>(w);
+        if (!qw || qw->property(kHooked).toBool())
+            continue;
+        qw->setProperty(kHooked, true);
+        restoreTaskbarMinimize(qw);
+        QObject::connect(qw, &QWindow::visibilityChanged, qw,
+                         [qw]() { restoreTaskbarMinimize(qw); });
+        qInfo().noquote() << QStringLiteral("任务栏最小化: 已为窗口补 WS_MINIMIZEBOX");
+    }
+#endif
+}
 
 int main(int argc, char *argv[])
 {
@@ -386,7 +439,10 @@ int main(int argc, char *argv[])
                 dir = plan.installDirOverride;
             if (dir.isEmpty())
                 dir = host.installed().value(QStringLiteral("installDir")).toString();
-            host.engine()->startUninstall(dir, false, false);
+            // 测试钩子：静默卸载没有界面可勾选"保留用户数据文件夹"，用环境变量打开它，
+            // 让打包回路能验证"保留用户数据目录"与"安装目录整体删除"互不影响。
+            const bool keepDataDir = !qEnvironmentVariableIsEmpty("ORBBEC_SETUP_SELFTEST_KEEP_DATA_DIR");
+            host.engine()->startUninstall(dir, false, keepDataDir);
         } else {
             QVariantMap options;
             if (plan.withOptions) {
@@ -471,6 +527,13 @@ int main(int argc, char *argv[])
 
     if (qmlFailed)
         return 2;
+
+    // 任务栏最小化：窗口是 QML 内部创建的 ApplicationWindow，创建时机晚于 load 返回，
+    // 且 Qt 在显示/状态切换时可能重设样式。按几个时间点扫描一次，命中即打标记并与
+    // visibilityChanged 连接，之后由窗口自己维护。
+    for (int delayMs : {0, 50, 200, 500, 1200}) {
+        QTimer::singleShot(delayMs, &app, []() { applyTaskbarMinimizeToWindows(); });
+    }
 
     if (plan.checkRunMode) {
         // 验证"完成页用的是点击安装时固化的 runMode"，而不是安装后重算的 mode。

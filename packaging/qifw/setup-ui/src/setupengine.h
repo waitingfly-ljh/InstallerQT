@@ -70,6 +70,10 @@ private:
     // 卸载完成后：删除开始菜单快捷方式、自建的卸载登记与 Uninstaller 值。
     void removeUninstallerRegistration();
     void cleanupUserDataIfRequested();
+    // 卸载成功（引擎退出码 0）后补删安装目录：QIFW 的 pr 删不掉正在运行的
+    // maintenancetool.exe，这里在子进程退出后清掉残留并移除目录本身。
+    // 返回 true 表示目录已不存在；false 时 residual 给出残留的相对路径清单。
+    bool cleanupInstallDirAfterUninstall(QString &residual);
     void appendLog(const QString &line);
     QString makeLogPath() const;
     void setProgress(int value);

@@ -25,27 +25,30 @@ Item {
     height: page.contentH
 
     property real requiredBytes: 1.8 * 1024 * 1024 * 1024   // 与评审稿"预计需要 1.8 GB"一致
-    property string installDir: ""
-    // 安装目录的规范化形式（C:/x/ → C:\x）。安装按钮只看它。
-    readonly property string effectiveInstallDir: Host.normalizeDirPath(page.installDir)
-    // 输入框显示的文字。不用 TextInput.text 绑定 installDir：那样每次 textEdited 都会
+    // 界面收集的是父文件夹（"把软件放到哪里"）；实际安装目录固定为其下的 OrbbecSlicer 子文件夹。
+    property string installParentDir: ""
+    // 实际安装目录的规范化形式（C:/x/ → C:\x）。安装按钮只看它。
+    readonly property string effectiveInstallDir: Host.installDirForParent(page.installParentDir)
+    // 输入框显示的文字。不用 TextInput.text 绑定 installParentDir：那样每次 textEdited 都会
     // 触发"是否形成绑定循环"的检查，日志里的 "Binding loop detected" 会让 capture-ui 判失败；
-    // 这里让文字只由下列事件推动：初次构造、installDir 在编辑之外被改（控制器给默认目录）、
+    // 这里让文字只由下列事件推动：初次构造、installParentDir 在编辑之外被改（控制器给默认值）、
     // 编辑结束、浏览对话框选完。
     property string dirText: ""
     // 用户正在输入框里编辑（textEdited 之后、编辑结束或失去焦点之前）。为 true 时不从
-    // installDir 回填输入框：控制器回显的规范化路径会把中间态（末尾的斜杠、小写盘符）
+    // installParentDir 回填输入框：控制器回显的规范化路径会把中间态（末尾的斜杠、小写盘符）
     // 改掉，输入时光标会跳。
     property bool dirEditing: false
-    // installDir 在编辑之外变化（启动时控制器给默认目录、--option 截图等）时回填输入框。
-    // 不能写成 onInstallDirChanged {...}：同一个属性上还有一条更新 installDir 的绑定
-    // （installDir: ctl.installOptions.installDir），两者并存会被 QML 编译器判成
+    // installParentDir 在编辑之外变化（启动时控制器给默认值、--option 截图等）时回填输入框。
+    // 不能写成 onInstallParentDirChanged {...}：同一个属性上还有一条更新 installParentDir 的绑定
+    // （installParentDir: ctl.installOptions.installParentDir），两者并存会被 QML 编译器判成
     // "Property value set multiple times" 并丢掉绑定，所以用 Connections。
-    // installDir 在构造时就可能有值（onChanged 不触发），Component.onCompleted 再补一次。
+    // installParentDir 在构造时就可能有值（onChanged 不触发），Component.onCompleted 再补一次。
     Connections {
         target: page
-        function onInstallDirChanged() { if (!page.dirEditing) page.dirText = page.installDir }
+        function onInstallParentDirChanged() { if (!page.dirEditing) page.dirText = page.installParentDir }
     }
+    // 构造时控制器可能已经给了默认父文件夹（onChanged 不会触发），补一次回填。
+    Component.onCompleted: page.dirText = page.installParentDir
     property bool shortcutDesktop: true
     property bool assoc3mf: true
     property bool assocStl: false
@@ -93,7 +96,7 @@ Item {
         Item { Layout.preferredHeight: 9 }
         Text {
             Layout.fillWidth: true
-            text: qsTr("确认安装位置和常用选项。")
+            text: qsTr("选择安装位置和常用选项，程序会装到所选文件夹下的 OrbbecSlicer 中。")
             wrapMode: Text.WordWrap
             lineHeight: 1.7
             font.family: theme.fontFamily
@@ -149,7 +152,7 @@ Item {
                     selectedTextColor: theme.text
                     // 平时跟随 dirText；用户编辑期间不回填（见 dirEditing）。
                     // 回填写的是文字，不是绑定：绑定在 dirEditing 变 true 时断开，之后由
-                    // OptionsPage 的 onInstallDirChanged 与 EditingFinished / 浏览对话框回填。
+                    // OptionsPage 的 onInstallParentDirChanged 与 EditingFinished / 浏览对话框回填。
                     text: page.dirEditing ? text : page.dirText
                     onTextEdited: {
                         page.dirEditing = true
@@ -158,7 +161,7 @@ Item {
                     onEditingFinished: {
                         page.dirEditing = false
                         // 编辑结束时把规范化后的路径回填到输入框。
-                        page.dirText = page.installDir
+                        page.dirText = page.installParentDir
                     }
                 }
             }
@@ -170,17 +173,30 @@ Item {
         }
         Item { Layout.preferredHeight: 7 }
 
+        // 实际落盘位置：界面收集的是父文件夹，最终目录由程序拼出，这里常驻展示，
+        // 免得用户对"到底装到哪"产生疑问。
+        Text {
+            Layout.fillWidth: true
+            visible: page.effectiveInstallDir.length > 0
+            text: qsTr("安装到：%1").arg(page.effectiveInstallDir)
+            elide: Text.ElideMiddle
+            font.family: theme.fontFamily
+            font.pixelSize: theme.fontSmall
+            color: theme.muted
+        }
+        Item { Layout.preferredHeight: 4 }
+
         Text {
             Layout.fillWidth: true
             wrapMode: Text.WordWrap
             font.family: theme.fontFamily
             font.pixelSize: theme.fontSmall
-            color: (page.dirProblem.length > 0 && page.installDir.length > 0) ? theme.danger
+            color: (page.dirProblem.length > 0 && page.installParentDir.length > 0) ? theme.danger
                  : page.spaceShort ? theme.warning
                  : !Host.payloadReady ? theme.warning : theme.muted
             text: {
                 // 目录问题优先于开发模式的负载提示：用户要看到的是"这个位置不能用"。
-                if (page.installDir.length > 0 && page.dirProblem.length > 0)
+                if (page.installParentDir.length > 0 && page.dirProblem.length > 0)
                     return page.dirProblem
                 if (page.spaceShort)
                     return qsTr("该磁盘仅剩 %1，需要 %2。").arg(page.fmtBytes(page.free)).arg(page.fmtBytes(page.requiredBytes))

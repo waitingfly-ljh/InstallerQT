@@ -68,8 +68,10 @@ ApplicationWindow {
         uninstalling: smoke.currentUninstalling
         Component.onCompleted: {
             view = smoke.currentView
-            if (smoke.dirOverride.length > 0)
-                installOptions.installDir = smoke.dirOverride
+            if (smoke.dirOverride.length > 0) {
+                installOptions.installParentDir = smoke.dirOverride
+                installOptions.installDir = Host.installDirForParent(smoke.dirOverride)
+            }
             // 截图时取消一个选项：写的是控制器自己的 installOptions（页面绑定在它身上），
             // applyShotState 再从 ctl 读回来交给截图外壳。
             if (smoke.optionIndex > 0) {

@@ -33,6 +33,16 @@ public:
     // 默认安装目录：<ProgramFiles>\OrbbecSlicer
     Q_INVOKABLE QString defaultInstallDir() const;
 
+    // 界面收集的是"父文件夹"，实际安装目录是 <父文件夹>\OrbbecSlicer。
+    // 末段已经是 OrbbecSlicer（大小写不敏感）时不再叠加，重复调用结果不变。
+    Q_INVOKABLE QString installDirForParent(const QString &parent) const;
+
+    // 默认父文件夹（defaultInstallDir() 的父目录），供安装设置页预填。
+    Q_INVOKABLE QString defaultInstallParent() const;
+
+    // 最终安装目录 → 父文件夹（维护/回填用）。
+    Q_INVOKABLE QString installParentForDir(const QString &installDir) const;
+
     // 版本来源：优先读注册表，退化到安装目录中的 maintenancetool.exe。
     Q_INVOKABLE QVariantMap installedInfo() const;
 

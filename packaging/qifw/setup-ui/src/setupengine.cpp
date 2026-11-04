@@ -14,6 +14,7 @@
 #include <QTemporaryDir>
 #include <QUuid>
 #include <QTime>
+#include <QThread>
 #include <QTimer>
 #include <QVariantMap>
 
@@ -460,9 +461,17 @@ void SetupEngine::onFinished(int exitCode, QProcess::ExitStatus status)
         return;
     }
 
-    if (m_uninstallMode)
+    if (m_uninstallMode) {
         cleanupUserDataIfRequested();
-    else {
+        // QIFW 的 pr 删不掉正在运行的 maintenancetool.exe，子进程退出后在这里补删。
+        // 目录必须整体消失；删不掉就判失败，避免"看起来卸载干净、实际留着 36 MB 元数据"。
+        QString residual;
+        if (!cleanupInstallDirAfterUninstall(residual)) {
+            setProgress(100);
+            emit finished(5, QStringLiteral("程序文件已删除，但安装目录仍残留：%1").arg(residual));
+            return;
+        }
+    } else {
         // 维护成功：新程序目录已就位，旧备份可以删除。
         dropBackup();
         applyInstallOptions();
@@ -878,4 +887,42 @@ void SetupEngine::cleanupUserDataIfRequested()
         }
         appendLog(QStringLiteral("保留个人数据目录: %1").arg(QDir::toNativeSeparators(appData)));
     }
+}
+
+bool SetupEngine::cleanupInstallDirAfterUninstall(QString &residual)
+{
+    residual.clear();
+    const QString dir = QDir::toNativeSeparators(m_installDir);
+    if (dir.isEmpty()) {
+        residual = QStringLiteral("(安装目录为空)");
+        return false;
+    }
+    if (!QFileInfo::exists(dir)) {
+        appendLog(QStringLiteral("卸载完成：安装目录已不存在 %1").arg(dir));
+        return true;
+    }
+
+    // maintenancetool.exe 在 pr 运行期间被自己占用；退出瞬间句柄也可能还没释放。
+    // 5 × 150 ms 覆盖常见的杀软 / 索引器延迟，仍失败就报残留。
+    for (int attempt = 1; attempt <= 5; ++attempt) {
+        QDir(dir).removeRecursively();
+        if (!QFileInfo::exists(dir)) {
+            appendLog(QStringLiteral("卸载完成：已删除安装目录 %1").arg(dir));
+            return true;
+        }
+        if (attempt < 5)
+            QThread::msleep(150);
+    }
+
+    QStringList leftovers;
+    QDir base(dir);
+    QDirIterator it(dir, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot,
+                    QDirIterator::Subdirectories);
+    while (it.hasNext() && leftovers.size() < 20) {
+        it.next();
+        leftovers << base.relativeFilePath(it.filePath());
+    }
+    residual = leftovers.isEmpty() ? QStringLiteral("(目录非空)") : leftovers.join(QStringLiteral("; "));
+    appendLog(QStringLiteral("卸载完成但安装目录仍残留 %1: %2").arg(dir, residual));
+    return false;
 }

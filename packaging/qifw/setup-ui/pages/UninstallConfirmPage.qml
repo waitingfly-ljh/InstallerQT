@@ -27,6 +27,7 @@ Item {
     readonly property string summary: (removeAllData
         ? qsTr("将移除程序文件，并删除本机的全部 OrbbecSlicer 应用数据：预设、校准结果、偏好、缓存与凭据。")
         : qsTr("将移除程序文件，保留自定义预设、校准结果、偏好与非敏感设备信息；缓存和登录凭据会被清除。"))
+        + qsTr(" 安装目录内的文件会被一并删除，个人项目请放在安装目录之外。")
         + (keepDataDir ? qsTr(" 同时保留安装时创建的用户数据文件夹。") : "")
 
     ColumnLayout {

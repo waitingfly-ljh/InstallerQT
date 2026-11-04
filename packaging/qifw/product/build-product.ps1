@@ -451,7 +451,27 @@ else {
         ) -LogPath $LogPath
         $sw.Stop()
         $uninstallSeconds = [math]::Round($sw.Elapsed.TotalSeconds, 2)
-        Add-Step '卸载' ($ru.ExitCode -eq 0) "exit=$($ru.ExitCode)" $uninstallSeconds
+        # QIFW 的 pr 删不掉正在运行的 maintenancetool.exe，原生回路必然残留元数据，
+        # 因此这里只断言退出码，并把残留清单落盘供诊断；"目录整体不存在"的强断言放在
+        # 9c 的外壳回路（由外壳在子进程退出后补删）。
+        $nativeResidual = @()
+        if (Test-Path -LiteralPath $instDir) {
+            $nativeResidual = @(
+                Get-ChildItem -LiteralPath $instDir -Recurse -Force -ErrorAction SilentlyContinue |
+                    ForEach-Object { $_.FullName.Substring($instDir.Length).TrimStart('\') } |
+                    Select-Object -First 20
+            )
+            if ($nativeResidual.Count -gt 0) {
+                $nativeResidual | Set-Content -LiteralPath (Join-Path $OutDir 'install-uninstall-residual.txt') -Encoding UTF8
+            }
+        }
+        $nativeDetail = "exit=$($ru.ExitCode)"
+        if ($nativeResidual.Count -gt 0) {
+            $nativeDetail += "；QIFW 自删限制，残留 $($nativeResidual.Count) 项（前 5：" + (($nativeResidual | Select-Object -First 5) -join '; ') + "）"
+        } else {
+            $nativeDetail += '；安装目录已清空'
+        }
+        Add-Step '卸载' ($ru.ExitCode -eq 0) $nativeDetail $uninstallSeconds
     }
 }
 
@@ -635,8 +655,11 @@ if ($setupPath -and -not $SkipInstallVerify) {
     $uninstDir = Join-Path $dataRoot 'Local\Orbbec\OrbbecSlicer\uninstaller'
     $lnk = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\OrbbecSlicer\卸载 OrbbecSlicer.lnk'
     $uninstallCleanupVerified = $false
+    $dirGone = $false
     for ($i = 0; $i -lt 20; $i++) {
-        $mtGone = -not (Test-Path -LiteralPath (Join-Path $setupInstDir 'maintenancetool.exe'))
+        # 安装目录必须整体消失：只检查 maintenancetool.exe 会漏掉 components.xml、
+        # installerResources、network.xml 等 QIFW 元数据残留。
+        $dirGone = -not (Test-Path -LiteralPath $setupInstDir)
         $entryGone = -not (Find-OrbbecUninstallEntry $setupInstDir)
         $uninstGone = -not (Test-Path -LiteralPath $uninstDir)
         $lnkGone = -not (Test-Path -LiteralPath $lnk)
@@ -645,13 +668,28 @@ if ($setupPath -and -not $SkipInstallVerify) {
         $assocReverted = ($assoc -ne 'OrbbecSlicer.3mf')
         $progGone = -not (Test-Path -LiteralPath 'HKCU:\Software\Classes\OrbbecSlicer.3mf')
         $entryCountAfter = @(Find-OrbbecEntriesForDir $setupInstDir).Count
-        $uninstallCleanupVerified = $mtGone -and $entryGone -and $uninstGone -and $lnkGone -and
+        $uninstallCleanupVerified = $dirGone -and $entryGone -and $uninstGone -and $lnkGone -and
                                     $desktopGone -and $assocReverted -and $progGone -and ($entryCountAfter -eq 0)
         if ($uninstallCleanupVerified) { break }
         Start-Sleep -Milliseconds 500
     }
+    # 目录残留时把清单落盘并写进步骤详情，便于直接判断是哪个文件没删掉。
+    $uninstallResidual = @()
+    if (-not $dirGone -and (Test-Path -LiteralPath $setupInstDir)) {
+        $uninstallResidual = @(
+            Get-ChildItem -LiteralPath $setupInstDir -Recurse -Force -ErrorAction SilentlyContinue |
+                ForEach-Object { $_.FullName.Substring($setupInstDir.Length).TrimStart('\') } |
+                Select-Object -First 20
+        )
+        if ($uninstallResidual.Count -gt 0) {
+            $uninstallResidual | Set-Content -LiteralPath (Join-Path $OutDir 'uninstall-residual.txt') -Encoding UTF8
+        }
+    }
     $setupUninstallOk = ($uninstallExit -eq 0) -and $uninstallCleanupVerified
-    Add-Step '从卸载入口静默卸载' $setupUninstallOk ("exit=$uninstallExit；程序文件 $(if ($mtGone) { '已移除' } else { '残留' })；登记 $(if ($entryGone) { '已删除' } else { '残留' })；卸载器 $(if ($uninstGone) { '已删除' } else { '残留' })；开始菜单 $(if ($lnkGone) { '已删除' } else { '残留' })；桌面快捷方式 $(if ($desktopGone) { '已删除' } else { '残留' })；.3mf 关联 $(if ($assocReverted) { '已还原' } else { '仍是 OrbbecSlicer.3mf' })；ProgId $(if ($progGone) { '已删除' } else { '残留' })；剩余条目 $entryCountAfter") $sw.Elapsed.TotalSeconds
+    $dirDetail = if ($dirGone) { '已删除' } elseif ($uninstallResidual.Count -gt 0) {
+        '残留：' + ($uninstallResidual -join '; ')
+    } else { '残留' }
+    Add-Step '从卸载入口静默卸载' $setupUninstallOk ("exit=$uninstallExit；安装目录 $dirDetail；登记 $(if ($entryGone) { '已删除' } else { '残留' })；卸载器 $(if ($uninstGone) { '已删除' } else { '残留' })；开始菜单 $(if ($lnkGone) { '已删除' } else { '残留' })；桌面快捷方式 $(if ($desktopGone) { '已删除' } else { '残留' })；.3mf 关联 $(if ($assocReverted) { '已还原' } else { '仍是 OrbbecSlicer.3mf' })；ProgId $(if ($progGone) { '已删除' } else { '残留' })；剩余条目 $entryCountAfter") $sw.Elapsed.TotalSeconds
 
     $setupInstallOk = $setupInstallComplete -and ($setupDiffCount -eq 0) -and $uninstallerEntryOk -and $setupUninstallOk
     if (-not $setupInstallOk) {

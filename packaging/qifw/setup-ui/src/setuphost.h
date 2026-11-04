@@ -45,6 +45,9 @@ public:
 
     // QML 调用
     Q_INVOKABLE QString defaultInstallDir();
+    Q_INVOKABLE QString defaultInstallParent();
+    Q_INVOKABLE QString installDirForParent(const QString &parent);
+    Q_INVOKABLE QString installParentForDir(const QString &installDir);
     Q_INVOKABLE QString probeDirectory(const QString &path);
     Q_INVOKABLE qint64 freeBytes(const QString &path);
     Q_INVOKABLE QString normalizeDirPath(const QString &path);

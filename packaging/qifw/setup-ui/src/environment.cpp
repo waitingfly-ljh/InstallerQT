@@ -125,6 +125,38 @@ QString Environment::normalizeDirPath(const QString &path) const
     return QDir::toNativeSeparators(QDir::cleanPath(t));
 }
 
+QString Environment::installDirForParent(const QString &parent) const
+{
+    QString base = QDir::fromNativeSeparators(parent.trimmed());
+    if (base.isEmpty())
+        return QString();
+    // "D:" 表示 D 盘当前目录，不是根；补分隔符后再 cleanPath，保证 "D:" 与 "D:\" 等价。
+    if (base.size() == 2 && base.at(1) == QLatin1Char(':'))
+        base += QLatin1Char('/');
+    base = QDir::cleanPath(base);
+    if (base.isEmpty())
+        return QString();
+    const QString leaf = QFileInfo(base).fileName();
+    if (leaf.compare(QStringLiteral("OrbbecSlicer"), Qt::CaseInsensitive) == 0)
+        return QDir::toNativeSeparators(base);
+    // 盘根（"D:/"）与普通目录都先 cleanPath 再转本地分隔符，避免拼出 "D:\\OrbbecSlicer"。
+    return QDir::toNativeSeparators(
+        QDir::cleanPath(base + QLatin1Char('/') + QStringLiteral("OrbbecSlicer")));
+}
+
+QString Environment::defaultInstallParent() const
+{
+    return QDir::toNativeSeparators(QFileInfo(defaultInstallDir()).absolutePath());
+}
+
+QString Environment::installParentForDir(const QString &installDir) const
+{
+    const QString clean = normalizeDirPath(installDir);
+    if (clean.isEmpty())
+        return QString();
+    return QDir::toNativeSeparators(QFileInfo(clean).absolutePath());
+}
+
 qint64 Environment::freeBytes(const QString &path) const
 {
     QString dir = QFileInfo(path).absoluteFilePath();
