@@ -490,6 +490,15 @@ void SetupEngine::applyInstallOptions()
     if (m_shortcutDesktop)
         ensureDesktopShortcut(m_installDir);
 
+    {
+        const QString programs = QStandardPaths::writableLocation(QStandardPaths::ApplicationsLocation);
+        const QString smDir = QDir(programs).filePath(QStringLiteral("OrbbecSlicer"));
+        const QString smLnk = QDir(smDir).filePath(QStringLiteral("OrbbecSlicer.lnk"));
+        const bool ok = createShellLink(smLnk, exe, QString(), QDir::toNativeSeparators(m_installDir));
+        appendLog(ok ? QStringLiteral("已创建开始菜单快捷方式: %1").arg(QDir::toNativeSeparators(smLnk))
+                     : QStringLiteral("创建开始菜单快捷方式失败: %1").arg(QDir::toNativeSeparators(smLnk)));
+    }
+
     QSettings record(QStringLiteral("HKEY_CURRENT_USER\\Software\\Orbbec\\OrbbecSlicer\\Assoc"),
                      QSettings::NativeFormat);
     setAssociation(record, QStringLiteral(".3mf"), m_assoc3mf, exe);
@@ -777,9 +786,12 @@ void SetupEngine::removeUninstallerRegistration()
 {
     const QString programs = QStandardPaths::writableLocation(QStandardPaths::ApplicationsLocation);
     const QString lnkDir = QDir(programs).filePath(QStringLiteral("OrbbecSlicer"));
-    const QString lnk = QDir(lnkDir).filePath(QStringLiteral("卸载 OrbbecSlicer.lnk"));
-    if (QFileInfo::exists(lnk) && QFile::remove(lnk))
-        appendLog(QStringLiteral("已删除卸载快捷方式: %1").arg(QDir::toNativeSeparators(lnk)));
+    for (const QString &name : {QStringLiteral("卸载 OrbbecSlicer.lnk"), QStringLiteral("OrbbecSlicer.lnk")}) {
+        const QString lnk = QDir(lnkDir).filePath(name);
+        // 不先判断 exists：某些沙箱/过滤驱动下 stat 会失败但文件仍在，直接删。
+        if (QFile::remove(lnk))
+            appendLog(QStringLiteral("已删除开始菜单快捷方式: %1").arg(QDir::toNativeSeparators(lnk)));
+    }
     QDir().rmdir(lnkDir);
 
     QSettings marker(QStringLiteral("HKEY_CURRENT_USER\\Software\\Orbbec\\OrbbecSlicer"),
