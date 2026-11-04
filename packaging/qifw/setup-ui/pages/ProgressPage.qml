@@ -1,4 +1,4 @@
-// ProgressPage.qml
+﻿// ProgressPage.qml
 import QtQuick
 import QtQuick.Layouts
 import SetupUi
@@ -24,6 +24,8 @@ Item {
     property int progress: Host.engine.progress
     property string detail: Host.engine.detail
     property bool canCancel: true
+    // 收尾阶段：引擎已结束，进度固定显示 100%，取消按钮禁用。
+    property bool complete: false
     signal cancelRequested()
 
     ColumnLayout {
@@ -82,7 +84,7 @@ Item {
                         id: percentText
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
-                        text: page.progress + "%"
+                        text: (page.complete ? 100 : page.progress) + "%"
                         font.family: theme.fontFamily
                         font.pixelSize: theme.fontBody
                         color: theme.muted
@@ -114,7 +116,7 @@ Item {
                     Rectangle {
                         height: parent.height
                         radius: 20
-                        width: parent.width * Math.max(0, Math.min(1, page.progress / 100))
+                        width: parent.width * Math.max(0, Math.min(1, (page.complete ? 100 : page.progress) / 100))
                         // .progress-fill: linear-gradient(90deg, 品牌色, 品牌浅色)
                         gradient: Gradient {
                             orientation: Gradient.Horizontal
@@ -148,7 +150,7 @@ Item {
             Item { Layout.fillWidth: true }
             UiBtn {
                 text: qsTr("取消")
-                enabledState: page.canCancel
+                enabledState: page.canCancel && !page.complete
                 onClicked: page.cancelRequested()
             }
         }

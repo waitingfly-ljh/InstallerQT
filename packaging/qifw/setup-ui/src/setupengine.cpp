@@ -5,6 +5,7 @@
 #include <QDateTime>
 #include <QCoreApplication>
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QProcessEnvironment>
@@ -21,6 +22,8 @@
 #include <shobjidl.h>
 
 #include <algorithm>
+#include <climits>
+#include "msopen.h"
 
 namespace {
 // 文件关联的 ProgId 沿用原 NSIS 方案的命名（BrandedMaintenance.nsh），升级/卸载时能对上。
@@ -509,6 +512,12 @@ bool SetupEngine::ensureDesktopShortcut(const QString &installDir)
     }
     const QString lnk = QDir(desktop).filePath(QStringLiteral("OrbbecSlicer.lnk"));
     const bool ok = createShellLink(lnk, exe, QString(), QDir::toNativeSeparators(installDir));
+    if (ok) {
+        QSettings marker(QStringLiteral("HKEY_CURRENT_USER\\Software\\Orbbec\\OrbbecSlicer"),
+                         QSettings::NativeFormat);
+        marker.setValue(QStringLiteral("DesktopShortcut"), QDir::toNativeSeparators(lnk));
+        marker.sync();
+    }
     appendLog(ok ? QStringLiteral("已创建桌面快捷方式: %1 → %2")
                        .arg(QDir::toNativeSeparators(lnk), QDir::toNativeSeparators(exe))
                  : QStringLiteral("创建桌面快捷方式失败: %1").arg(QDir::toNativeSeparators(lnk)));
@@ -556,6 +565,91 @@ bool SetupEngine::createShellLink(const QString &lnkPath, const QString &target,
 bool SetupEngine::createShortcut(const QString &lnkPath, const QString &target, const QString &workDir)
 {
     return createShellLink(lnkPath, target, QString(), workDir);
+}
+
+bool SetupEngine::shellLinkTarget(const QString &lnkPath, QString &target) const
+{
+#ifdef Q_OS_WIN
+    const HRESULT hrInit = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    IShellLinkW *link = nullptr;
+    bool ok = false;
+    if (SUCCEEDED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW,
+                                   reinterpret_cast<void **>(&link))) && link) {
+        IPersistFile *file = nullptr;
+        const QString native = QDir::toNativeSeparators(lnkPath);
+        if (SUCCEEDED(link->QueryInterface(IID_IPersistFile, reinterpret_cast<void **>(&file))) && file) {
+            if (SUCCEEDED(file->Load(reinterpret_cast<LPCOLESTR>(native.utf16()), STGM_READ))) {
+                wchar_t buf[MAX_PATH] = {};
+                if (SUCCEEDED(link->GetPath(buf, MAX_PATH, nullptr, 0)) && buf[0]) {
+                    target = QString::fromWCharArray(buf);
+                    ok = true;
+                }
+            }
+            file->Release();
+        }
+        link->Release();
+    }
+    if (SUCCEEDED(hrInit))
+        CoUninitialize();
+    return ok;
+#else
+    Q_UNUSED(lnkPath)
+    Q_UNUSED(target)
+    return false;
+#endif
+}
+
+void SetupEngine::revertInstallOptions()
+{
+    // 1) 桌面快捷方式：优先用安装时记录的路径（只可能由我们创建）；旧安装没有记录时，
+    //    再按"目标位于本次安装目录且是已知主程序"判断。
+    const QString desktop = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
+    QSettings marker(QStringLiteral("HKEY_CURRENT_USER\\Software\\Orbbec\\OrbbecSlicer"),
+                     QSettings::NativeFormat);
+    const QString recorded = marker.value(QStringLiteral("DesktopShortcut")).toString();
+    const QString lnk = recorded.isEmpty()
+                            ? QDir(desktop).filePath(QStringLiteral("OrbbecSlicer.lnk"))
+                            : recorded;
+    bool shouldRemove = false;
+    if (!recorded.isEmpty()) {
+        shouldRemove = true;
+    } else if (QFileInfo::exists(lnk)) {
+        QString target;
+        if (shellLinkTarget(lnk, target)) {
+            const QString t = QDir::cleanPath(QDir::fromNativeSeparators(target));
+            const QString d = QDir::cleanPath(QDir::fromNativeSeparators(m_installDir));
+            const QString name = QFileInfo(t).fileName();
+            const bool sameDir = t.startsWith(d + QLatin1Char('/'), Qt::CaseInsensitive);
+            const bool known = name.compare(QStringLiteral("ob-slicer.exe"), Qt::CaseInsensitive) == 0
+                               || name.compare(QStringLiteral("OrbbecSlicer.exe"), Qt::CaseInsensitive) == 0;
+            shouldRemove = sameDir && known;
+        }
+    }
+    if (!recorded.isEmpty() && !QFileInfo::exists(lnk)) {
+        // 某些沙箱/过滤驱动下 stat 会失败但文件仍在：用目录列表兜底。
+        const QStringList entries = QDir(desktop).entryList(QStringList() << QStringLiteral("OrbbecSlicer.lnk"),
+                                                            QDir::Files | QDir::Hidden);
+        shouldRemove = shouldRemove || !entries.isEmpty();
+    }
+    if (shouldRemove && QFile::remove(lnk))
+        appendLog(QStringLiteral("已删除桌面快捷方式: %1").arg(QDir::toNativeSeparators(lnk)));
+    else
+        appendLog(QStringLiteral("保留桌面快捷方式（目标不是本次安装或删除失败）: %1")
+                      .arg(QDir::toNativeSeparators(lnk)));
+    marker.remove(QStringLiteral("DesktopShortcut"));
+    marker.sync();
+
+    // 2) 文件关联：用安装时记录的原值还原，然后清掉记录。
+    const QString exe = m_env ? m_env->appExecutablePath(m_installDir) : QString();
+    QSettings record(QStringLiteral("HKEY_CURRENT_USER\\Software\\Orbbec\\OrbbecSlicer\\Assoc"),
+                     QSettings::NativeFormat);
+    if (!record.allKeys().isEmpty()) {
+        setAssociation(record, QStringLiteral(".3mf"), false, exe);
+        setAssociation(record, QStringLiteral(".stl"), false, exe);
+        record.remove(QString());
+        record.sync();
+        appendLog(QStringLiteral("已还原 .3mf/.stl 文件关联"));
+    }
 }
 
 void SetupEngine::installUninstaller()
@@ -620,26 +714,49 @@ void SetupEngine::installUninstaller()
 
     if (keyPath.isEmpty()) {
         // 找不到 QIFW 的键（例如旧版/被清理过）：自建一个，卸载时再删。
+        // per-machine 安装（Program Files 且管理员）写 HKLM，让所有用户都能看到；否则写 HKCU。
+        const bool perMachine = QDir::cleanPath(QDir::fromNativeSeparators(installDir))
+                                    .startsWith(QStringLiteral("C:/Program Files"), Qt::CaseInsensitive);
+        const QString hive = (perMachine && MSOpen::isAdmin())
+                                 ? QStringLiteral("HKEY_LOCAL_MACHINE")
+                                 : QStringLiteral("HKEY_CURRENT_USER");
         const QString guid = QUuid::createUuid().toString(QUuid::WithoutBraces).toUpper();
-        keyPath = QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{%1}")
+        keyPath = hive + QStringLiteral("\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{%1}")
                       .arg(guid);
         QSettings k(keyPath, QSettings::NativeFormat);
         k.setValue(QStringLiteral("DisplayName"), QStringLiteral("OrbbecSlicer"));
-        k.setValue(QStringLiteral("DisplayVersion"), QStringLiteral(ORBBEC_SETUP_VERSION));
         k.setValue(QStringLiteral("Publisher"), QStringLiteral("Orbbec"));
-        k.setValue(QStringLiteral("InstallLocation"), installDir);
-        k.setValue(QStringLiteral("NoModify"), 1);
-        k.setValue(QStringLiteral("NoRepair"), 1);
         k.sync();
-        appendLog(QStringLiteral("已自建卸载登记: %1").arg(keyPath));
+        appendLog(QStringLiteral("已自建卸载登记（%1）: %2").arg(hive, keyPath));
     }
     m_selfUninstallKey = keyPath;
 
+    // 程序与功能需要的字段：补齐/覆盖，EstimatedSize 以 KB 计。
+    qint64 installBytes = 0;
+    {
+        QDirIterator it(m_installDir, QDir::Files, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            it.next();
+            installBytes += it.fileInfo().size();
+        }
+    }
     QSettings entry(keyPath, QSettings::NativeFormat);
+    if (entry.value(QStringLiteral("DisplayName")).toString().isEmpty())
+        entry.setValue(QStringLiteral("DisplayName"), QStringLiteral("OrbbecSlicer"));
+    if (entry.value(QStringLiteral("Publisher")).toString().isEmpty())
+        entry.setValue(QStringLiteral("Publisher"), QStringLiteral("Orbbec"));
+    if (entry.value(QStringLiteral("DisplayVersion")).toString().isEmpty())
+        entry.setValue(QStringLiteral("DisplayVersion"), QStringLiteral(ORBBEC_SETUP_VERSION));
+    entry.setValue(QStringLiteral("InstallLocation"), installDir);
     entry.setValue(QStringLiteral("UninstallString"), uninstallString);
     entry.setValue(QStringLiteral("QuietUninstallString"), quietString);
     entry.setValue(QStringLiteral("DisplayIcon"), dest);
+    entry.setValue(QStringLiteral("EstimatedSize"), static_cast<int>(qMin<qint64>(installBytes / 1024, INT_MAX)));
+    entry.setValue(QStringLiteral("NoModify"), 1);
+    entry.setValue(QStringLiteral("NoRepair"), 1);
     entry.sync();
+    if (entry.status() != QSettings::NoError)
+        appendLog(QStringLiteral("写卸载登记失败（%1）: %2").arg(int(entry.status())).arg(keyPath));
 
     QSettings marker(QStringLiteral("HKEY_CURRENT_USER\\Software\\Orbbec\\OrbbecSlicer"),
                      QSettings::NativeFormat);
@@ -674,15 +791,27 @@ void SetupEngine::removeUninstallerRegistration()
 
     if (!selfKey.isEmpty()) {
 #ifdef Q_OS_WIN
-        const QString prefix = QStringLiteral("HKEY_CURRENT_USER\\");
-        if (selfKey.startsWith(prefix, Qt::CaseInsensitive)) {
+        struct HivePrefix { const char *prefix; HKEY hive; };
+        const HivePrefix prefixes[] = {
+            {"HKEY_CURRENT_USER\\", HKEY_CURRENT_USER},
+            {"HKEY_LOCAL_MACHINE\\", HKEY_LOCAL_MACHINE},
+        };
+        bool deleted = false;
+        for (const HivePrefix &p : prefixes) {
+            const QString prefix = QString::fromLatin1(p.prefix);
+            if (!selfKey.startsWith(prefix, Qt::CaseInsensitive))
+                continue;
             const std::wstring sub = selfKey.mid(prefix.size()).toStdWString();
-            const LONG rc = RegDeleteKeyW(HKEY_CURRENT_USER, sub.c_str());
-            if (rc == ERROR_SUCCESS)
-                appendLog(QStringLiteral("已删除卸载登记: %1").arg(selfKey));
-            else
-                appendLog(QStringLiteral("删除卸载登记失败（%1）: %2").arg(rc).arg(selfKey));
+            const LONG rc = RegDeleteKeyW(p.hive, sub.c_str());
+            appendLog(QStringLiteral("删除卸载登记（%1）: %2")
+                          .arg(rc == ERROR_SUCCESS ? QStringLiteral("成功")
+                                                   : (rc == ERROR_FILE_NOT_FOUND ? QStringLiteral("已由 pr 删除")
+                                                                                 : QStringLiteral("失败 %1").arg(rc)),
+                               selfKey));
+            deleted = true;
+            break;
         }
+        Q_UNUSED(deleted)
 #endif
         m_selfUninstallKey.clear();
     }
@@ -690,8 +819,9 @@ void SetupEngine::removeUninstallerRegistration()
 
 void SetupEngine::cleanupUserDataIfRequested()
 {
-    // 先删用户可见的卸载入口（快捷方式/自建登记），再做数据清理。
+    // 先删用户可见的卸载入口（快捷方式/自建登记），再还原安装选项（桌面快捷方式/关联），最后清数据。
     removeUninstallerRegistration();
+    revertInstallOptions();
     // 数据清理由外壳负责：QIFW 只管程序文件。
     // 产品数据目录按应用自身的 org/app 名（Orbbec/OrbbecSlicer）取，不要用安装器自己的
     // AppDataLocation（那是 Orbbec/OrbbecSlicerSetup，删它只会删安装器日志）。

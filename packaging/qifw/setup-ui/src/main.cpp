@@ -2,6 +2,7 @@
 // 职责只有三件：解析自己的命令行、决定"开发模式 / 已打包模式"、把宿主对象交给 QML。
 // 界面逻辑在根目录 QML 与 pages/ 下，安装/卸载的进程管理在 setupengine.cpp。
 #include <QGuiApplication>
+#include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QQmlComponent>
 #include <QQmlContext>
@@ -59,6 +60,10 @@ struct LaunchPlan {
     bool checkWindow = false;
     QString checkLaunchDir;
     QString checkShortcutDir;
+    bool checkFinishTiming = false;
+    // 测试钩子：静默安装时使用安装设置页的默认选项（快捷方式/.3mf/完成后启动），
+    // 供打包回路验证"安装选项在卸载时被还原"。
+    bool withOptions = false;
 };
 
 LaunchPlan parseArgs(QGuiApplication &app)
@@ -113,6 +118,10 @@ LaunchPlan parseArgs(QGuiApplication &app)
             plan.checkLaunchDir = own.at(++i);
         } else if (a == QStringLiteral("--check-desktop-shortcut") && i + 1 < own.size()) {
             plan.checkShortcutDir = own.at(++i);
+        } else if (a == QStringLiteral("--check-finish-timing")) {
+            plan.checkFinishTiming = true;
+        } else if (a == QStringLiteral("--with-options")) {
+            plan.withOptions = true;
         } else if (a == QStringLiteral("--view") && i + 1 < own.size()) {
             plan.smokeView = own.at(++i);
         } else if (a == QStringLiteral("--dir") && i + 1 < own.size()) {
@@ -321,6 +330,8 @@ int main(int argc, char *argv[])
     QCoreApplication::setApplicationName(QStringLiteral("OrbbecSlicerSetup"));
     QCoreApplication::setOrganizationName(QStringLiteral("Orbbec"));
     QCoreApplication::setApplicationVersion(QStringLiteral(ORBBEC_SETUP_VERSION));
+    // 窗口/任务栏图标：与嵌入到 exe 的品牌图标一致。
+    QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/app.ico")));
 
     const LaunchPlan plan = parseArgs(app);
 
@@ -374,7 +385,14 @@ int main(int argc, char *argv[])
                 dir = host.installed().value(QStringLiteral("installDir")).toString();
             host.engine()->startUninstall(dir, false, false);
         } else {
-            host.engine()->startInstall(plan.targetDir, {});
+            QVariantMap options;
+            if (plan.withOptions) {
+                options.insert(QStringLiteral("shortcutDesktop"), true);
+                options.insert(QStringLiteral("assoc3mf"), true);
+                options.insert(QStringLiteral("assocStl"), false);
+                options.insert(QStringLiteral("launchAfterInstall"), true);
+            }
+            host.engine()->startInstall(plan.targetDir, options);
         }
         if (earlyExit >= 0)
             return earlyExit;
@@ -443,13 +461,51 @@ int main(int argc, char *argv[])
     const bool driveOptions = plan.mode == StartMode::SelfTest
                               && (plan.checkOptions || plan.checkSteps || host.selfTestOptions());
     const QString entry = (plan.mode == StartMode::SelfTest && !driveOptions && !plan.qmlSmoke
-                           && !plan.checkWindow)
+                           && !plan.checkWindow && !plan.checkFinishTiming)
                               ? QStringLiteral("LoadEntry")
                               : QStringLiteral("App");
     qml.load(QUrl(QStringLiteral("qrc:/SetupUi/%1.qml").arg(entry)));
 
     if (qmlFailed)
         return 2;
+
+    if (plan.checkFinishTiming) {
+        // 验证进度收尾：成功 600ms、失败 300ms 的停留，再切页。
+        bool ok = true;
+        QTimer::singleShot(100, &app, [&qml, &ok]() {
+            QObject *root = qml.rootObjects().value(0);
+            QObject *ctl = root ? root->property("ctl").value<QObject *>() : nullptr;
+            if (!ctl) { qCritical() << "SELFTEST 未找到 controller"; QCoreApplication::exit(2); return; }
+            ctl->setProperty("view", "progress");
+            QMetaObject::invokeMethod(ctl, "onEngineFinished", Qt::DirectConnection,
+                                      Q_ARG(QVariant, 0), Q_ARG(QVariant, QString()));
+            const bool early = ctl->property("view").toString() == "progress"
+                               && ctl->property("finishing").toBool();
+            QTimer::singleShot(300, ctl, [ctl, early, &ok]() {
+                if (!early) ok = false;
+                QTimer::singleShot(800, ctl, [ctl, early, &ok]() {
+                    const bool done = ctl->property("view").toString() == "complete"
+                                      && !ctl->property("finishing").toBool();
+                    qInfo().noquote() << "SELFTEST 成功收尾: 停留=" << early << "完成页=" << done;
+                    if (!done) ok = false;
+                    // 失败分支
+                    ctl->setProperty("view", "progress");
+                    QMetaObject::invokeMethod(ctl, "onEngineFinished", Qt::DirectConnection,
+                                              Q_ARG(QVariant, 2), Q_ARG(QVariant, QStringLiteral("boom")));
+                    QTimer::singleShot(150, ctl, [ctl, &ok]() {
+                        const bool stillProgress = ctl->property("view").toString() == "progress";
+                        QTimer::singleShot(250, ctl, [ctl, stillProgress, &ok]() {
+                            const bool failure = ctl->property("view").toString() == "failure";
+                            qInfo().noquote() << "SELFTEST 失败收尾: 停留=" << stillProgress << "失败页=" << failure;
+                            if (!stillProgress || !failure) ok = false;
+                            QCoreApplication::exit(ok ? 0 : 2);
+                        });
+                    });
+                });
+            });
+        });
+        return app.exec();
+    }
 
     if (plan.checkWindow) {
         // 真实平台下确认主窗口真的显示出来（截图用的 shotWindow 不算）。

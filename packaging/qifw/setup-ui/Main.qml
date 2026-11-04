@@ -133,6 +133,8 @@ ApplicationWindow {
             // ---- 安装过程 ----
             ProgressPage {
                 visible: ctl.view === "progress"
+                progress: ctl.displayProgress
+                complete: ctl.finishing
                 heading: ctl.uninstalling ? qsTr("正在卸载 OrbbecSlicer")
                            : ctl.mode === "repair" ? qsTr("正在修复 OrbbecSlicer")
                            : ctl.mode === "upgrade" ? qsTr("正在升级 OrbbecSlicer")

@@ -104,6 +104,18 @@ QtObject {
     property bool removeAllData: false
     property bool keepDataDir: false
     property bool cancelled: false
+    // 进度收尾：成功时显示 100% 并停留，失败/取消也短暂停留后再切页。
+    property bool finishing: false
+    property int pendingCode: -1
+    property string pendingSummary: ""
+    readonly property int displayProgress: finishing ? 100 : Host.engine.progress
+
+    // QtObject 没有默认属性，子对象必须挂到具体属性上。
+    property Timer finishTimer: Timer {
+        interval: 600
+        repeat: false
+        onTriggered: ctl.applyFinish()
+    }
 
     // 从系统卸载入口启动（--uninstall）：跳过维护判断，直接进入卸载流程。
     readonly property bool uninstallOnly: typeof uninstallMode !== "undefined" && uninstallMode === true
@@ -142,6 +154,16 @@ QtObject {
     }
 
     function onEngineFinished(code, summary) {
+        pendingCode = code
+        pendingSummary = summary
+        finishing = code === 0
+        finishTimer.interval = code === 0 ? 600 : 300
+        finishTimer.restart()
+    }
+
+    function applyFinish() {
+        finishing = false
+        const code = pendingCode
         if (code === 0) {
             if (uninstalling) {
                 uninstalling = false
@@ -155,14 +177,26 @@ QtObject {
         uninstalling = false
         failureCode = code
         failureCodeText = code > 0 ? String(code) : ""
-        failureMessage = summary
+        failureMessage = pendingSummary
         view = "failure"
     }
 
     function onEngineCancelled() {
-        uninstalling = false
-        cancelled = true
-        view = installed.installed ? "maintenance" : "options"
+        // 取消也短暂停留，避免进度条瞬间消失。
+        pendingCode = -1
+        finishing = false
+        finishTimer.stop()
+        cancelTimer.start()
+    }
+
+    property Timer cancelTimer: Timer {
+        interval: 300
+        repeat: false
+        onTriggered: {
+            ctl.uninstalling = false
+            ctl.cancelled = true
+            ctl.view = ctl.installed.installed ? "maintenance" : "options"
+        }
     }
 
     function retry() {

@@ -483,6 +483,50 @@ function Find-OrbbecUninstallEntry([string]$dir) {
     return $null
 }
 
+function Find-AllOrbbecEntries {
+    $res = New-Object System.Collections.Generic.List[object]
+    $roots = @(
+        'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+        'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+        'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
+    )
+    foreach ($root in $roots) {
+        if (-not (Test-Path -LiteralPath $root)) { continue }
+        foreach ($k in (Get-ChildItem -LiteralPath $root -ErrorAction SilentlyContinue)) {
+            $v = Get-ItemProperty -LiteralPath $k.PSPath -ErrorAction SilentlyContinue
+            if ($null -ne $v -and $v.DisplayName -eq $productName) {
+                $v | Add-Member -NotePropertyName '_KeyPath' -NotePropertyValue $k.PSPath -Force
+                $res.Add($v)
+            }
+        }
+    }
+    return $res.ToArray()
+}
+
+$iconProbeSrc = @"
+using System;
+using System.Runtime.InteropServices;
+public static class IconProbe {
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern IntPtr LoadLibraryExW(string file, IntPtr h, uint flags);
+    [DllImport("kernel32.dll")] static extern bool FreeLibrary(IntPtr h);
+    delegate bool EnumProc(IntPtr h, IntPtr type, IntPtr name, IntPtr param);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    static extern bool EnumResourceNamesW(IntPtr h, IntPtr type, EnumProc cb, IntPtr param);
+    static bool _found;
+    static bool Cb(IntPtr h, IntPtr type, IntPtr name, IntPtr param) { _found = true; return false; }
+    public static bool HasGroupIcon(string path) {
+        IntPtr h = LoadLibraryExW(path, IntPtr.Zero, 0x00000002);
+        if (h == IntPtr.Zero) return false;
+        _found = false;
+        EnumResourceNamesW(h, new IntPtr(14), Cb, IntPtr.Zero);
+        FreeLibrary(h);
+        return _found;
+    }
+}
+"@
+if (-not ('IconProbe' -as [type])) { Add-Type $iconProbeSrc }
+
 if ($setupPath -and -not $SkipInstallVerify) {
     # 测试钩子：把卸载器的部署位置与数据清理根都重定向到 out/，不碰本机真实用户数据。
     $dataRoot = Join-Path $OutDir 'data-root'
@@ -503,7 +547,7 @@ if ($setupPath -and -not $SkipInstallVerify) {
         }
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
         $r = Invoke-Native -FilePath $setupPath -ArgumentList @(
-            '--log', $setupShellLog, '--silent', 'in', '-t', $setupInstDir
+            '--log', $setupShellLog, '--with-options', '--silent', 'in', '-t', $setupInstDir
         ) -LogPath $LogPath
         $sw.Stop()
         $setupInstallSeconds += [math]::Round($sw.Elapsed.TotalSeconds, 2)
@@ -531,17 +575,31 @@ if ($setupPath -and -not $SkipInstallVerify) {
     }
     Add-Step '外壳安装差异' ($setupDiffCount -eq 0) ($(if ($setupDiffCount) { "差异 $setupDiffCount 项，前 10: " + (($setupDiff | Select-Object -First 10) -join '; ') } else { "staging 侧 $(@(Get-ChildItem -LiteralPath $StageRoot -Recurse -File -Force).Count) 个文件全部就位" }))
 
+    $desktopDir = [Environment]::GetFolderPath('Desktop')
+    $desktopLnk = Join-Path $desktopDir 'OrbbecSlicer.lnk'
+    $desktopCreated = Test-Path -LiteralPath $desktopLnk
+    $assocCreated = (Get-ItemProperty 'HKCU:\Software\Classes\.3mf' -ErrorAction SilentlyContinue).'(default)' -eq 'OrbbecSlicer.3mf'
+    Add-Step '安装选项落地' ($desktopCreated -and $assocCreated) ("桌面快捷方式=$(if ($desktopCreated) { '有' } else { '无' })；.3mf 关联=$(if ($assocCreated) { '已设置' } else { '未设置' })")
+
     Write-Both '== 9b2. 卸载入口检查 ==' 'STEP'
     $entry = Find-OrbbecUninstallEntry $setupInstDir
     $uninstallerEntryOk = $false
+    $uninstallerEntryCount = @(Find-AllOrbbecEntries).Count
     if ($entry) {
         $uninstallerPath = $entry.DisplayIcon
         if (Test-Path -LiteralPath $uninstallerPath) { $uninstallerBytes = (Get-Item -LiteralPath $uninstallerPath).Length }
-        $uninstallerEntryOk = ($entry.UninstallString -match 'OrbbecSlicerUninstaller\.exe') -and
-                              ($entry.DisplayIcon -match 'OrbbecSlicerUninstaller\.exe') -and
-                              ($entry.QuietUninstallString -match '--uninstall')
+        $fieldsOk = $entry.Publisher -and $entry.DisplayVersion -and $entry.InstallLocation -and
+                    $entry.DisplayIcon -and $entry.UninstallString -match 'OrbbecSlicerUninstaller\.exe' -and
+                    $entry.QuietUninstallString -match '--uninstall' -and
+                    (Test-Path -LiteralPath $entry.DisplayIcon) -and ([int]$entry.EstimatedSize -gt 0)
+        $uninstallerEntryOk = $fieldsOk -and ($uninstallerEntryCount -eq 1)
     }
-    Add-Step '卸载入口检查' $uninstallerEntryOk ($(if ($entry) { "UninstallString=$($entry.UninstallString)；体积 $(if ($uninstallerBytes) { "{0:N0} B" -f $uninstallerBytes } else { '未知' })" } else { '没有找到指向品牌化卸载器的卸载登记' }))
+    Add-Step '卸载入口检查' $uninstallerEntryOk ($(if ($entry) { "条目数=$uninstallerEntryCount；UninstallString=$($entry.UninstallString)；DisplayIcon=$($entry.DisplayIcon)；EstimatedSize=$($entry.EstimatedSize)KB" } else { '没有找到指向品牌化卸载器的卸载登记' }))
+
+    Write-Both '== 9b3. 图标检查 ==' 'STEP'
+    $iconsVerified = [IconProbe]::HasGroupIcon($setupPath)
+    if ($uninstallerPath) { $iconsVerified = $iconsVerified -and [IconProbe]::HasGroupIcon($uninstallerPath) }
+    Add-Step '图标检查' $iconsVerified ("Setup.exe=$(if ($iconsVerified) { '有图标' } else { '缺图标' })；卸载器=$uninstallerPath")
 
     Write-Both '== 9c. 从卸载入口静默卸载 ==' 'STEP'
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -553,15 +611,27 @@ if ($setupPath -and -not $SkipInstallVerify) {
         $uninstallExit = $r.ExitCode
     }
     $sw.Stop()
-    Start-Sleep -Seconds 4   # 卸载器自删除是延迟执行的
-    $mtGone = -not (Test-Path -LiteralPath (Join-Path $setupInstDir 'maintenancetool.exe'))
-    $entryGone = -not (Find-OrbbecUninstallEntry $setupInstDir)
+    # 卸载器的自删除与登记清理有延迟（启动器要等 UI 退出再删目录）：最多轮询 10 秒。
     $uninstDir = Join-Path $dataRoot 'Local\Orbbec\OrbbecSlicer\uninstaller'
-    $uninstGone = -not (Test-Path -LiteralPath $uninstDir)
     $lnk = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\OrbbecSlicer\卸载 OrbbecSlicer.lnk'
-    $lnkGone = -not (Test-Path -LiteralPath $lnk)
-    $setupUninstallOk = ($uninstallExit -eq 0) -and $mtGone -and $entryGone -and $uninstGone -and $lnkGone
-    Add-Step '从卸载入口静默卸载' $setupUninstallOk ("exit=$uninstallExit；程序文件 $(if ($mtGone) { '已移除' } else { '残留' })；登记 $(if ($entryGone) { '已删除' } else { '残留' })；卸载器 $(if ($uninstGone) { '已删除' } else { '残留' })；快捷方式 $(if ($lnkGone) { '已删除' } else { '残留' })") $sw.Elapsed.TotalSeconds
+    $uninstallCleanupVerified = $false
+    for ($i = 0; $i -lt 20; $i++) {
+        $mtGone = -not (Test-Path -LiteralPath (Join-Path $setupInstDir 'maintenancetool.exe'))
+        $entryGone = -not (Find-OrbbecUninstallEntry $setupInstDir)
+        $uninstGone = -not (Test-Path -LiteralPath $uninstDir)
+        $lnkGone = -not (Test-Path -LiteralPath $lnk)
+        $desktopGone = -not (Test-Path -LiteralPath $desktopLnk)
+        $assoc = (Get-ItemProperty 'HKCU:\Software\Classes\.3mf' -ErrorAction SilentlyContinue).'(default)'
+        $assocReverted = ($assoc -ne 'OrbbecSlicer.3mf')
+        $progGone = -not (Test-Path -LiteralPath 'HKCU:\Software\Classes\OrbbecSlicer.3mf')
+        $entryCountAfter = @(Find-AllOrbbecEntries).Count
+        $uninstallCleanupVerified = $mtGone -and $entryGone -and $uninstGone -and $lnkGone -and
+                                    $desktopGone -and $assocReverted -and $progGone -and ($entryCountAfter -eq 0)
+        if ($uninstallCleanupVerified) { break }
+        Start-Sleep -Milliseconds 500
+    }
+    $setupUninstallOk = ($uninstallExit -eq 0) -and $uninstallCleanupVerified
+    Add-Step '从卸载入口静默卸载' $setupUninstallOk ("exit=$uninstallExit；程序文件 $(if ($mtGone) { '已移除' } else { '残留' })；登记 $(if ($entryGone) { '已删除' } else { '残留' })；卸载器 $(if ($uninstGone) { '已删除' } else { '残留' })；开始菜单 $(if ($lnkGone) { '已删除' } else { '残留' })；桌面快捷方式 $(if ($desktopGone) { '已删除' } else { '残留' })；.3mf 关联 $(if ($assocReverted) { '已还原' } else { '仍是 OrbbecSlicer.3mf' })；ProgId $(if ($progGone) { '已删除' } else { '残留' })；剩余条目 $entryCountAfter") $sw.Elapsed.TotalSeconds
 
     $setupInstallOk = $setupInstallComplete -and ($setupDiffCount -eq 0) -and $uninstallerEntryOk -and $setupUninstallOk
     if (-not $setupInstallOk) {
@@ -615,6 +685,9 @@ $result = [ordered]@{
     uninstallerPath   = $uninstallerPath
     uninstallerBytes  = $uninstallerBytes
     uninstallerEntryVerified = $uninstallerEntryOk
+    iconsVerified     = $iconsVerified
+    uninstallEntryCount = $uninstallerEntryCount
+    uninstallCleanupVerified = $uninstallCleanupVerified
     nsisBaselineBytes = $nsisBaseline
     sizeVsNsis        = [math]::Round(($installerBytes - $nsisBaseline) / $nsisBaseline, 4)
     buildSeconds      = $buildSeconds

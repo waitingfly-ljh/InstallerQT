@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.21)
+﻿cmake_minimum_required(VERSION 3.21)
 project(OrbbecSlicerSetup VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -18,6 +18,7 @@ qt_standard_project_setup()
 qt_add_executable(OrbbecSlicerSetup
     WIN32
     src/main.cpp
+    src/app.rc
 )
 
 # 版本号由构建脚本通过 -DORBBEC_SETUP_VERSION=... 传入；缺省 1.0.0。
@@ -80,6 +81,12 @@ target_link_libraries(OrbbecSlicerSetup PRIVATE Qt6::Core Qt6::Gui Qt6::Quick Qt
 
 # 侧栏光斑：SideGlow.qml 的同一公式预生成成一张 228×300 的 PNG（AppFrame 用 Image 拉伸显示）。
 # 资源别名固定成 /glow.png，QML 里引用 qrc:/glow.png。
+set_source_files_properties(resources/app.ico PROPERTIES QT_RESOURCE_ALIAS app.ico)
+qt_add_resources(OrbbecSlicerSetup "brandicon"
+    PREFIX "/"
+    FILES resources/app.ico
+)
+
 set_source_files_properties(resources/glow.png PROPERTIES QT_RESOURCE_ALIAS glow.png)
 qt_add_resources(OrbbecSlicerSetup "glow"
     PREFIX "/"
@@ -95,7 +102,7 @@ set_target_properties(OrbbecSlicerSetup PROPERTIES
 )
 
 # 单文件启动器：不链接 Qt，负责从自身尾部释放 ui/ + payload/ 再启动界面。
-add_executable(OrbbecSlicerSetupLauncher WIN32 src/launcher.cpp)
+add_executable(OrbbecSlicerSetupLauncher WIN32 src/launcher.cpp src/app.rc)
 target_compile_definitions(OrbbecSlicerSetupLauncher PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_link_libraries(OrbbecSlicerSetupLauncher PRIVATE shell32)
 set_target_properties(OrbbecSlicerSetupLauncher PROPERTIES

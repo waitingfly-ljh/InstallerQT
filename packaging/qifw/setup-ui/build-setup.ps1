@@ -282,6 +282,36 @@ if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $uninstallerExe)) {
 }
 Write-Both ("卸载器 exe: {0:N0} B（{1}）" -f (Get-Item $uninstallerExe).Length, $uninstallerExe)
 
+# 品牌图标必须嵌进三个 exe（外壳 / 启动器 / 卸载器）；用 PE 资源表里的 RT_GROUP_ICON 判定。
+$iconProbeSrc = @"
+using System;
+using System.Runtime.InteropServices;
+public static class IconProbe {
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern IntPtr LoadLibraryExW(string file, IntPtr h, uint flags);
+    [DllImport("kernel32.dll")] static extern bool FreeLibrary(IntPtr h);
+    delegate bool EnumProc(IntPtr h, IntPtr type, IntPtr name, IntPtr param);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    static extern bool EnumResourceNamesW(IntPtr h, IntPtr type, EnumProc cb, IntPtr param);
+    static bool _found;
+    static bool Cb(IntPtr h, IntPtr type, IntPtr name, IntPtr param) { _found = true; return false; }
+    public static bool HasGroupIcon(string path) {
+        IntPtr h = LoadLibraryExW(path, IntPtr.Zero, 0x00000002);
+        if (h == IntPtr.Zero) return false;
+        _found = false;
+        EnumResourceNamesW(h, new IntPtr(14), Cb, IntPtr.Zero);
+        FreeLibrary(h);
+        return _found;
+    }
+}
+"@
+if (-not ('IconProbe' -as [type])) { Add-Type $iconProbeSrc }
+foreach ($exeWithIcon in @((Join-Path $DistDir 'OrbbecSlicerSetup.exe'), $launcher, $uninstallerExe)) {
+    if (-not [IconProbe]::HasGroupIcon($exeWithIcon)) { Fail "缺少品牌图标: $exeWithIcon" }
+}
+Write-Both '图标校验通过: 外壳 / 启动器 / 卸载器 均含品牌图标'
+
+
 # --- 5. 启动自检 ------------------------------------------------------------
 if ($Selftest) {
     $exe = Join-Path $DistDir 'OrbbecSlicerSetup.exe'
@@ -315,7 +345,15 @@ if ($Selftest) {
     Get-Content -LiteralPath $uninstSelfLog, ($uninstSelfLog + '.err') -Encoding UTF8 -ErrorAction SilentlyContinue |
         Select-Object -First 20 | ForEach-Object { Write-Both $_ 'SELFTEST' }
     if ($sx.ExitCode -ne 0) { Fail "卸载器自检失败（exit $($sx.ExitCode)），日志见 $uninstSelfLog" }
-    Write-Both '启动自检通过（--selftest / --check-window / --uninstall --check-window / 卸载器 均 exit 0）'
+
+    # 进度收尾时序（成功 600ms / 失败 300ms）。
+    $timingLog = Join-Path $Here 'out\selftest-finish-timing.log'
+    $st2 = Start-Process -FilePath $exe -ArgumentList @('--selftest', '--check-finish-timing') -NoNewWindow -Wait -PassThru `
+        -RedirectStandardOutput $timingLog -RedirectStandardError ($timingLog + '.err')
+    Get-Content -LiteralPath $timingLog, ($timingLog + '.err') -Encoding UTF8 -ErrorAction SilentlyContinue |
+        Select-Object -First 20 | ForEach-Object { Write-Both $_ 'SELFTEST' }
+    if ($st2.ExitCode -ne 0) { Fail "进度收尾自检失败（exit $($st2.ExitCode)），日志见 $timingLog" }
+    Write-Both '启动自检通过（--selftest / --check-window / --uninstall --check-window / 卸载器 / 进度收尾 均 exit 0）'
 }
 
 Write-Both '外壳构建完成'

@@ -62,6 +62,9 @@ private:
     bool createShortcut(const QString &lnkPath, const QString &target, const QString &workDir);
     bool createShellLink(const QString &lnkPath, const QString &target, const QString &args,
                          const QString &workDir);
+    bool shellLinkTarget(const QString &lnkPath, QString &target) const;
+    // 卸载成功：删除安装时创建的桌面快捷方式（仅当指向本安装主程序）、还原文件关联。
+    void revertInstallOptions();
     // 安装/维护成功后：部署品牌化卸载器、改写系统卸载登记与开始菜单快捷方式。
     void installUninstaller();
     // 卸载完成后：删除开始菜单快捷方式、自建的卸载登记与 Uninstaller 值。
