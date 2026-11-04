@@ -82,6 +82,10 @@ QtObject {
     property var installed: ({ "installed": false, "version": "", "installDir": "" })
     property string targetVersion: Host.payloadVersion
     property bool riskAcknowledged: false
+    // 本次安装流程的意图：在点击"安装"时从 mode 固化下来。
+    // 安装成功后 installed 会变成"已安装且版本相同"，mode 会变成 repair；
+    // 完成页不能再用重算后的 mode，否则全新安装会显示"修复完成"。
+    property string runMode: "fresh"
     readonly property string mode: {
         if (!installed.installed) return "fresh"
         const a = compareVersions(targetVersion, installed.version)
@@ -141,6 +145,7 @@ QtObject {
     }
 
     function beginInstall() {
+        runMode = mode
         cancelled = false
         // 目录按规范化形式落盘（输入框里可能是 C:/x/ 这种写法）。
         installOptions.installDir = Host.normalizeDirPath(installOptions.installDir)

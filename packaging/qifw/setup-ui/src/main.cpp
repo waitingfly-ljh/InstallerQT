@@ -61,6 +61,7 @@ struct LaunchPlan {
     QString checkLaunchDir;
     QString checkShortcutDir;
     bool checkFinishTiming = false;
+    bool checkRunMode = false;
     // 测试钩子：静默安装时使用安装设置页的默认选项（快捷方式/.3mf/完成后启动），
     // 供打包回路验证"安装选项在卸载时被还原"。
     bool withOptions = false;
@@ -120,6 +121,8 @@ LaunchPlan parseArgs(QGuiApplication &app)
             plan.checkShortcutDir = own.at(++i);
         } else if (a == QStringLiteral("--check-finish-timing")) {
             plan.checkFinishTiming = true;
+        } else if (a == QStringLiteral("--check-run-mode")) {
+            plan.checkRunMode = true;
         } else if (a == QStringLiteral("--with-options")) {
             plan.withOptions = true;
         } else if (a == QStringLiteral("--view") && i + 1 < own.size()) {
@@ -461,13 +464,42 @@ int main(int argc, char *argv[])
     const bool driveOptions = plan.mode == StartMode::SelfTest
                               && (plan.checkOptions || plan.checkSteps || host.selfTestOptions());
     const QString entry = (plan.mode == StartMode::SelfTest && !driveOptions && !plan.qmlSmoke
-                           && !plan.checkWindow && !plan.checkFinishTiming)
+                           && !plan.checkWindow && !plan.checkFinishTiming && !plan.checkRunMode)
                               ? QStringLiteral("LoadEntry")
                               : QStringLiteral("App");
     qml.load(QUrl(QStringLiteral("qrc:/SetupUi/%1.qml").arg(entry)));
 
     if (qmlFailed)
         return 2;
+
+    if (plan.checkRunMode) {
+        // 验证"完成页用的是点击安装时固化的 runMode"，而不是安装后重算的 mode。
+        QTimer::singleShot(100, &app, [&qml]() {
+            QObject *root = qml.rootObjects().value(0);
+            QObject *ctl = root ? root->property("ctl").value<QObject *>() : nullptr;
+            if (!ctl) { qCritical() << "SELFTEST 未找到 controller"; QCoreApplication::exit(2); return; }
+            ctl->setProperty("targetVersion", QStringLiteral("1.0.0"));
+            const auto check = [ctl](bool installed, const QString &version, const QString &expect) {
+                QVariantMap m;
+                m.insert(QStringLiteral("installed"), installed);
+                m.insert(QStringLiteral("version"), version);
+                m.insert(QStringLiteral("installDir"), installed ? QStringLiteral("X") : QString());
+                ctl->setProperty("installed", m);
+                QMetaObject::invokeMethod(ctl, "beginInstall", Qt::DirectConnection);
+                const QString got = ctl->property("runMode").toString();
+                qInfo().noquote() << QStringLiteral("SELFTEST runMode installed=%1 version=%2 got=%3 expect=%4")
+                                         .arg(installed ? 1 : 0).arg(version, got, expect);
+                return got == expect;
+            };
+            bool ok = true;
+            ok = check(false, QString(), QStringLiteral("fresh")) && ok;
+            ok = check(true, QStringLiteral("1.0.0"), QStringLiteral("repair")) && ok;
+            ok = check(true, QStringLiteral("0.9.0"), QStringLiteral("upgrade")) && ok;
+            ok = check(true, QStringLiteral("2.0.0"), QStringLiteral("downgrade")) && ok;
+            QCoreApplication::exit(ok ? 0 : 2);
+        });
+        return app.exec();
+    }
 
     if (plan.checkFinishTiming) {
         // 验证进度收尾：成功 600ms、失败 300ms 的停留，再切页。
@@ -533,7 +565,6 @@ int main(int argc, char *argv[])
     }
 
     if (plan.mode == StartMode::SelfTest && !plan.qmlSmoke) {
-        // 不进入事件循环：根对象构造出来就够了，绑定错误已写进日志。
         qInfo().noquote() << "自检: 根对象" << (qml.rootObjects().isEmpty()
                                                    ? QStringLiteral("?")
                                                    : QString::fromLatin1(qml.rootObjects().first()->metaObject()->className()));

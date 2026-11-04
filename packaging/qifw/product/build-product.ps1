@@ -483,6 +483,26 @@ function Find-OrbbecUninstallEntry([string]$dir) {
     return $null
 }
 
+function Find-OrbbecEntriesForDir([string]$dir) {
+    $want = [System.IO.Path]::GetFullPath($dir)
+    $res = New-Object System.Collections.Generic.List[object]
+    $roots = @(
+        'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+        'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+        'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
+    )
+    foreach ($root in $roots) {
+        if (-not (Test-Path -LiteralPath $root)) { continue }
+        foreach ($k in (Get-ChildItem -LiteralPath $root -ErrorAction SilentlyContinue)) {
+            $v = Get-ItemProperty -LiteralPath $k.PSPath -ErrorAction SilentlyContinue
+            if ($null -eq $v -or $v.DisplayName -ne $productName) { continue }
+            try { $loc = [System.IO.Path]::GetFullPath($v.InstallLocation) } catch { continue }
+            if ($loc -ieq $want) { $res.Add($v) }
+        }
+    }
+    return $res.ToArray()
+}
+
 function Find-AllOrbbecEntries {
     $res = New-Object System.Collections.Generic.List[object]
     $roots = @(
@@ -584,7 +604,7 @@ if ($setupPath -and -not $SkipInstallVerify) {
     Write-Both '== 9b2. 卸载入口检查 ==' 'STEP'
     $entry = Find-OrbbecUninstallEntry $setupInstDir
     $uninstallerEntryOk = $false
-    $uninstallerEntryCount = @(Find-AllOrbbecEntries).Count
+    $uninstallerEntryCount = @(Find-OrbbecEntriesForDir $setupInstDir).Count
     if ($entry) {
         $uninstallerPath = $entry.DisplayIcon
         if (Test-Path -LiteralPath $uninstallerPath) { $uninstallerBytes = (Get-Item -LiteralPath $uninstallerPath).Length }
@@ -624,7 +644,7 @@ if ($setupPath -and -not $SkipInstallVerify) {
         $assoc = (Get-ItemProperty 'HKCU:\Software\Classes\.3mf' -ErrorAction SilentlyContinue).'(default)'
         $assocReverted = ($assoc -ne 'OrbbecSlicer.3mf')
         $progGone = -not (Test-Path -LiteralPath 'HKCU:\Software\Classes\OrbbecSlicer.3mf')
-        $entryCountAfter = @(Find-AllOrbbecEntries).Count
+        $entryCountAfter = @(Find-OrbbecEntriesForDir $setupInstDir).Count
         $uninstallCleanupVerified = $mtGone -and $entryGone -and $uninstGone -and $lnkGone -and
                                     $desktopGone -and $assocReverted -and $progGone -and ($entryCountAfter -eq 0)
         if ($uninstallCleanupVerified) { break }

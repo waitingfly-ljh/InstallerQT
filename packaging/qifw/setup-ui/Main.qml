@@ -136,9 +136,9 @@ ApplicationWindow {
                 progress: ctl.displayProgress
                 complete: ctl.finishing
                 heading: ctl.uninstalling ? qsTr("正在卸载 OrbbecSlicer")
-                           : ctl.mode === "repair" ? qsTr("正在修复 OrbbecSlicer")
-                           : ctl.mode === "upgrade" ? qsTr("正在升级 OrbbecSlicer")
-                           : ctl.mode === "downgrade" ? qsTr("正在降级 OrbbecSlicer")
+                           : ctl.runMode === "repair" ? qsTr("正在修复 OrbbecSlicer")
+                           : ctl.runMode === "upgrade" ? qsTr("正在升级 OrbbecSlicer")
+                           : ctl.runMode === "downgrade" ? qsTr("正在降级 OrbbecSlicer")
                            : qsTr("正在安装 OrbbecSlicer")
                 lead: ctl.uninstalling ? qsTr("正在移除程序文件，请保持窗口开启。")
                                      : qsTr("请保持窗口开启。安装过程不会上传本机项目或用户预设。")
@@ -148,13 +148,13 @@ ApplicationWindow {
             // ---- 安装/维护完成 ----
             CompletePage {
                 visible: ctl.view === "complete"
-                title: ctl.mode === "repair" ? qsTr("修复完成")
-                         : ctl.mode === "upgrade" ? qsTr("升级完成")
-                         : ctl.mode === "downgrade" ? qsTr("降级完成")
+                title: ctl.runMode === "repair" ? qsTr("修复完成")
+                         : ctl.runMode === "upgrade" ? qsTr("升级完成")
+                         : ctl.runMode === "downgrade" ? qsTr("降级完成")
                          : qsTr("安装完成")
-                description: ctl.mode === "repair" ? qsTr("修复完成，原有配置可继续使用。")
-                               : ctl.mode === "upgrade" ? qsTr("升级完成，兼容配置已迁移。")
-                               : ctl.mode === "downgrade" ? qsTr("降级完成，配置快照已保留。")
+                description: ctl.runMode === "repair" ? qsTr("修复完成，原有配置可继续使用。")
+                               : ctl.runMode === "upgrade" ? qsTr("升级完成，兼容配置已迁移。")
+                               : ctl.runMode === "downgrade" ? qsTr("降级完成，配置快照已保留。")
                                : qsTr("OrbbecSlicer 已准备就绪。")
                 primaryText: qsTr("立即启动")
                 onPrimaryAction: {

@@ -353,7 +353,15 @@ if ($Selftest) {
     Get-Content -LiteralPath $timingLog, ($timingLog + '.err') -Encoding UTF8 -ErrorAction SilentlyContinue |
         Select-Object -First 20 | ForEach-Object { Write-Both $_ 'SELFTEST' }
     if ($st2.ExitCode -ne 0) { Fail "进度收尾自检失败（exit $($st2.ExitCode)），日志见 $timingLog" }
-    Write-Both '启动自检通过（--selftest / --check-window / --uninstall --check-window / 卸载器 / 进度收尾 均 exit 0）'
+
+    # 完成页标题用 runMode（fresh 不应显示"修复完成"）。
+    $runModeLog = Join-Path $Here 'out\selftest-run-mode.log'
+    $st3 = Start-Process -FilePath $exe -ArgumentList @('--selftest', '--check-run-mode') -NoNewWindow -Wait -PassThru `
+        -RedirectStandardOutput $runModeLog -RedirectStandardError ($runModeLog + '.err')
+    Get-Content -LiteralPath $runModeLog, ($runModeLog + '.err') -Encoding UTF8 -ErrorAction SilentlyContinue |
+        Select-Object -First 20 | ForEach-Object { Write-Both $_ 'SELFTEST' }
+    if ($st3.ExitCode -ne 0) { Fail "runMode 自检失败（exit $($st3.ExitCode)），日志见 $runModeLog" }
+    Write-Both '启动自检通过（--selftest / --check-window / --uninstall --check-window / 卸载器 / 进度收尾 / runMode 均 exit 0）'
 }
 
 Write-Both '外壳构建完成'
