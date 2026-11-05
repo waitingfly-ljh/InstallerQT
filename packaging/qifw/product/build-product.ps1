@@ -40,7 +40,7 @@
 #>
 [CmdletBinding()]
 param(
-    # 留空 ⇒ <UpstreamRepo>\build\presets\windows-release\OrbbecSlicer（在下方解析）
+    # Empty => <UpstreamRepo>\build\presets\windows-release\OrbbecSlicer (resolved below).
     [string]$StageRoot = '',
     [string]$UpstreamRepo = 'D:\Orbbec\orbbecslicer',
     [ValidateSet(0, 1, 3, 5, 7, 9)][int]$Compression = 5,
@@ -62,7 +62,7 @@ $IfwBin = Join-Path (Resolve-RepoPath -RelativePath $Manifest.ifw.installDir -Re
 $binarycreator = Join-Path $IfwBin 'binarycreator.exe'
 $installerbase = Join-Path $IfwBin 'installerbase.exe'
 
-# 默认 staging = 原项目 CMake preset 的安装产物（原项目已删除 packaging\windows\dist）
+# Default staging = the original project's CMake preset install output (repo no longer ships packaging\windows\dist)
 if ([string]::IsNullOrWhiteSpace($StageRoot)) {
     $StageRoot = Join-Path $UpstreamRepo 'build\presets\windows-release\OrbbecSlicer'
 }
