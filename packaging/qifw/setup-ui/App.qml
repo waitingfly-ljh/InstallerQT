@@ -3,38 +3,38 @@ import QtQuick
 import QtQuick.Layouts
 import SetupUi
 
-// 引擎入口：main.cpp 通过 qrc:/SetupUi/App.qml 加载本文件，Main 负责创建并显示窗口。
-// 根类型是 Item（而不是 ApplicationWindow）：窗口由 Main 自己创建并显示，
-// 本文件只持有唯一的控制器实例并连接引擎信号。
+// Engine entry point: main.cpp loads this file via qrc:/SetupUi/App.qml; Main creates and shows the window.
+// The root type is Item (not ApplicationWindow): the window is created and shown by Main itself,
+// and this file only holds the single controller instance and connects engine signals.
 Item {
     id: app
 
-    // 截图构建注入（--view <视图> / --shot-dir <目录>）；普通启动里两者都是空串。
-    // main.cpp 总会注入 viewName / shotDir / smokeView / smokeOption；它们都是 QVariant，
-    // 读不存在的名字会得到 undefined，字符串化后为空，所以普通构建里也可放心读。
-    // 必须在文件靠前的位置声明：QML 里"读当前作用域里声明在后面的属性"不可靠
-    // （onCompleted 里读到过空串）。所以这里显式绑定宿主注入的全局 viewName / shotDir。
+    // Screenshot build injection (--view <view> / --shot-dir <dir>); both are empty strings in normal launches.
+    // main.cpp always injects viewName / shotDir / smokeView / smokeOption; they are QVariant,
+    // reading a nonexistent name yields undefined, which stringifies to empty, so they are safe to read in normal builds too.
+    // They must be declared near the top of the file: in QML "reading a property declared later in the current scope" is unreliable
+    // (an empty string was read in onCompleted). So the host-injected globals viewName / shotDir are bound explicitly here.
     property string viewName: typeof viewNameGlobal !== "undefined" ? viewNameGlobal : ""
     property string shotDir: typeof shotDirGlobal !== "undefined" ? shotDirGlobal : ""
-    // --selftest --qml-smoke：把 QmlSmoke（全部页面）挂到下面的 Loader 上。
+    // --selftest --qml-smoke: mounts QmlSmoke (all pages) on the Loader below.
     readonly property bool smoke: Qt.application.arguments.indexOf("--qml-smoke") >= 0
     function shotPathFor(v, d) {
         return v.length > 0 ? (d.length > 0 ? d + "/" + v + ".png" : v + ".png") : ""
     }
     readonly property string shotPath: shotPathFor(app.viewName, app.shotDir)
-    // 截图模式（-DORBBEC_SETUP_SHOT 构建）：main.cpp 注入 shotModel 并注册
-    // OrbbecShot.QmlShot 单例。QmlSmoke 每次都往另一份 App 占位模型里加载本文件，
-    // 那份模型是空对象，本文件的控制器按普通启动走（且它所在的窗口始终不可见）。
+    // Screenshot mode (-DORBBEC_SETUP_SHOT build): main.cpp injects shotModel and registers
+    // the OrbbecShot.QmlShot singleton. QmlSmoke always loads this file into another placeholder App model;
+    // that model is an empty object, so this file's controller follows the normal launch path (and its window stays invisible).
     readonly property bool shotMode: typeof shotModel !== "undefined" && shotModel !== null
                                               && Object.keys(shotModel).length > 0
 
-    // 先于第 0 帧创建控制器：截图/冒烟模式下按模型摆位，普通启动走 start()
-    // （按"已安装/未安装"选首屏）。冒烟根对象 QmlSmoke 有自己的控制器。
+    // Create the controller before frame 0: screenshot/smoke modes position it from the model, normal launches go through start()
+    // (choosing the first screen based on "installed/not installed"). The smoke root object QmlSmoke has its own controller.
     //
-    // 控制器刻意声明成 property 而不是 id：id 绑不到 Main 的 required property 上
-    // （把 id 写进属性值会绑定该 id 的"对象指针属性"，普通对象没有这个属性，于是整个
-    // Main 拿到 null）。库里新建的 SetupController 会自动挂到本对象的子级，生命周期不变；
-    // 外部仍然可以读写 app.ctl.view。
+    // The controller is deliberately declared as a property rather than an id: an id cannot bind to Main's required property
+    // (writing an id into a property value binds that id's "object pointer property"; plain objects lack it, so the whole
+    // Main gets null). A SetupController created in the library automatically becomes a child of this object, with unchanged lifetime;
+    // externally, app.ctl.view can still be read and written.
     property SetupController ctl: SetupController {
         uninstalling: app.shotMode && shotModel.uninstalling !== undefined ? shotModel.uninstalling : false
         Component.onCompleted: {
@@ -52,7 +52,7 @@ Item {
         }
     }
 
-    // 冒烟根对象（--selftest --qml-smoke）：在主窗口之后声明，保持它最后创建。
+    // Smoke root object (--selftest --qml-smoke): declared after the main window so it is created last.
     Loader { id: smokeLoader }
 
 
@@ -64,25 +64,25 @@ Item {
 
     Main {
         id: main
-        // 只给对象值：不要用 ctl（App 里同名的 id 赋给 required 属性会变成指针，Main 读到 null）。
+        // Pass only object values: do not use ctl (assigning the same-named id from App to a required property becomes a pointer, and Main reads null).
         Component.onCompleted: bindController(app.ctl)
-        // 冒烟模式下会再挂一个 QmlSmoke（它自己有一份可见的主窗口），这一个只留作参照。
+        // In smoke mode another QmlSmoke is mounted (it has its own visible main window); this one is kept only as a reference.
         visible: !app.smoke
     }
 
-    // 截图：QmlSmoke 在自己的窗口里截（抓屏在 main.cpp 的 QmlShot 单例里做）。
-    //   --selftest --qml-smoke → QmlSmoke（实例化全部页面，控制器按 --view 摆位）
-    //   其他 → 本文件直接启动（按 shotModel 摆位），截图由 QmlSmoke 之外的路径完成。
-    // 文件名 = <--shot-dir>/<--view>.png。
+    // Screenshot: QmlSmoke captures in its own window (the screen grab is done in main.cpp's QmlShot singleton).
+    //   --selftest --qml-smoke -> QmlSmoke (instantiates all pages, the controller is positioned by --view)
+    //   otherwise -> this file launches directly (positioned by shotModel), and the screenshot is done by a path outside QmlSmoke.
+    // File name = <--shot-dir>/<--view>.png.
     Component.onCompleted: {
         const png = shotPathFor(app.viewName, app.shotDir)
-        // 根对象是 Item，Main 作为嵌套 Window 不会自动显示；普通启动显式 show。
+        // The root object is an Item, so Main as a nested Window is not shown automatically; normal launches call show explicitly.
         if (!app.smoke)
             main.show()
         if (app.smoke) {
             smokeLoader.setSource("qrc:/SetupUi/QmlSmoke.qml", {
                 "shotPath": png,
-                // 组件只声明、不实例化：交给 QmlSmoke 自己 Loader 创建。
+                // The component is only declared, not instantiated: QmlSmoke's own Loader creates it.
                 "appFrameComponent": smokeFrameComponent
             })
         }
@@ -91,14 +91,14 @@ Item {
     Component {
         id: smokeFrameComponent
         AppFrame {
-            // 冒烟组件是独立的实例，不再自行推状态：把截图用的控制器接受进来。
-            // 选项页直接绑定到控制器（与 Main.qml 一致）：--option 改的就是这份状态，
-            // 复制一份快照反而会因为 ctl 的 onCompleted 时序而拿到默认值。
+            // The smoke component is an independent instance and no longer derives state itself: it accepts the screenshot controller.
+            // The options page binds directly to the controller (consistent with Main.qml): --option changes exactly this state,
+            // and copying a snapshot would instead yield defaults due to ctl's onCompleted timing.
             property var shotCtl
             StackLayout {
                 anchors.fill: parent
-                // 内容区与 Main.qml 一致：只显示 controller 的 currentIndex 那一页。
-                // StackLayout 会忽略页面自身的 visible，所以 showOnly() 改的是 ctl.flowView。
+                // Content area matches Main.qml: shows only the page at the controller's currentIndex.
+                // StackLayout ignores each page's own visible, so showOnly() changes ctl.flowView instead.
                 currentIndex: shotCtl !== undefined ? shotCtl.viewIndex : 0
 
                 OptionsPage {
@@ -120,22 +120,22 @@ Item {
                     riskAcknowledged: false
                     onRiskToggled: (c) => {}
                 }
-                // 进度档位在截图组件里写死：截图模式下 Host.engine 没有在跑，读它有值也是 0%。
-                ProgressPage { id: progressPage; heading: "正在安装 OrbbecSlicer"; lead: "请保持窗口开启。安装过程不会上传本机项目或用户预设。"; phase: "正在准备组件"; progress: 62; detail: "正在验证安装包完整性..." }
-                CompletePage { id: completePage; title: "完成"; description: "就绪"; primaryText: "立即启动"; secondaryText: "查看文件"; showSecondary: true }
-                FailurePage { id: failurePage; errorCode: "1205"; errorText: "写入文件时权限不足" }
+                // The progress level is hardcoded in the screenshot component: Host.engine is not running in screenshot mode, so reading it always yields 0%.
+                ProgressPage { id: progressPage; heading: "Installing OrbbecSlicer"; lead: "Please keep this window open. The installation does not upload local projects or user presets."; phase: "Preparing components"; progress: 62; detail: "Verifying package integrity..." }
+                CompletePage { id: completePage; title: "Complete"; description: "Ready"; primaryText: "Launch now"; secondaryText: "View files"; showSecondary: true }
+                FailurePage { id: failurePage; errorCode: "1205"; errorText: "Insufficient permission while writing files" }
                 DataScopePage { id: dataScopePage; removeAllData: false }
                 UninstallConfirmPage { id: confirmPage; removeAllData: false; keepDataDir: true; installDir: "C:\\OrbbecSlicer" }
                 CompletePage {
                     id: uninstalledPage
-                    title: "卸载完成"
-                    description: "程序文件已移除，个人预设和偏好已保留。"
-                    primaryText: "结束"
-                    secondaryText: "查看文件"
+                    title: "Uninstall complete"
+                    description: "Program files have been removed; personal presets and preferences were retained."
+                    primaryText: "Finish"
+                    secondaryText: "View files"
                     showSecondary: true
                 }
             }
-            // 冒烟组件是独立的实例，不再自行推状态：controller 与步骤表都来自调用方。
+            // The smoke component is an independent instance and no longer derives state itself: both the controller and the step list come from the caller.
             function showOnly(view) {
                 if (shotCtl !== undefined)
                     shotCtl.setView(view)
@@ -144,10 +144,10 @@ Item {
                 if (state.ctl === undefined)
                     return
                 shotCtl = state.ctl
-                // 截图时 --option 改的是 ctl.installOptions，页面绑在它身上。页面自身的
-                // dirChanged / optionChanged 只在用户操作时发，截图时不会触发，所以不接回控制器。
-                // 步骤表同样绑到 ctl 上（而不是抄一份快照）：setView() 切到进度/完成页时，
-                // 侧栏要跟着变成 done/active/pending。
+                // During screenshots --option changes ctl.installOptions, which the page binds to. The page's own
+                // dirChanged / optionChanged only fire on user actions and do not trigger during screenshots, so they are not wired back to the controller.
+                // The step list is likewise bound to ctl (rather than copied as a snapshot): when setView() switches to the progress/complete page,
+                // the sidebar must follow and become done/active/pending.
                 installSteps = Qt.binding(() => shotCtl.installSteps)
                 uninstallSteps = Qt.binding(() => shotCtl.uninstallSteps)
                 optionsPage.installParentDir = Qt.binding(() => shotCtl.installOptions.installParentDir)
@@ -155,9 +155,9 @@ Item {
                 optionsPage.assoc3mf = Qt.binding(() => shotCtl.installOptions.assoc3mf)
                 optionsPage.assocStl = Qt.binding(() => shotCtl.installOptions.assocStl)
                 optionsPage.launchAfterInstall = Qt.binding(() => shotCtl.installOptions.launchAfterInstall)
-                // 截图外壳上 applyShotState 之后，optionsPage.installParentDir 是绑到 ctl 上的；
-                // 拖后腿的只有"ctl 还没给默认值"：ctl 的 Component.onCompleted 比截图外壳晚跑。
-                // 那时仍是空串，就用与 SetupController.resetOptions 相同的默认值兜底。
+                // After applyShotState on the screenshot shell, optionsPage.installParentDir is bound to ctl;
+                // the only laggard is "ctl has not yet supplied defaults": ctl's Component.onCompleted runs after the screenshot shell.
+                // At that point it is still an empty string, so fall back to the same defaults as SetupController.resetOptions.
                 if (shotCtl.installOptions.installParentDir.length === 0) {
                     shotCtl.installOptions.installParentDir = Host.normalizeDirPath(Host.defaultInstallParent())
                     shotCtl.installOptions.installDir = Host.installDirForParent(shotCtl.installOptions.installParentDir)

@@ -3,15 +3,15 @@ import QtQuick
 import QtQuick.Layouts
 import SetupUi
 
-// 卸载 1/3：选择数据范围。默认"保留个人数据"，分类表随选择变化。
+// Uninstall 1/3: choose the data scope. Defaults to "Keep personal data"; the category table changes with the selection.
 Item {
     id: page
 
-    // 页面绘制在 AppFrame 的内容区里（尺寸 = 窗口 − 标题栏/侧栏/内边距）。但页面拿到的
-    // parent 尺寸在这个构造顺序下是 0（AppFrame 布局晚一步才定下来，页面的 anchors.fill
-    // 不会跟着重算），内容区的 ColumnLayout 于是按最窄一行（97px）排版，自动换行的地方
-    // 一律提前折行。所以布局不跟 parent 走，直接按窗口尺寸算内容区。窗口尺寸未知时
-    // （隐身的冒烟副本）退回默认 940×650。
+    // The page is drawn inside AppFrame's content area (size = window − title bar/side bar/padding). But the
+    // parent size the page receives in this construction order is 0 (AppFrame's layout settles a step later, so the page's anchors.fill
+    // is not recalculated), and the content area's ColumnLayout therefore lays out to the narrowest row (97px), wrapping
+    // early wherever it would wrap. So the layout does not follow parent; it computes the content area from the window size directly. When the window size is unknown
+    // (the hidden smoke copy) it falls back to the default 940×650.
     readonly property real contentW: (page.Window.width > 0 ? page.Window.width : theme.windowW)
                                      - theme.sideW - theme.contentPaddingH * 2
     readonly property real contentH: (page.Window.height > 0 ? page.Window.height : theme.windowH)
@@ -25,18 +25,18 @@ Item {
 
     readonly property var dataRows: removeAllData
         ? [
-            { "name": qsTr("自定义预设、校准结果"), "action": qsTr("删除") },
-            { "name": qsTr("软件偏好、地区设置"), "action": qsTr("删除") },
-            { "name": qsTr("缓存与日志"), "action": qsTr("删除") },
-            { "name": qsTr("登录令牌、云服务凭据"), "action": qsTr("删除") },
-            { "name": qsTr("安装目录之外的项目文件"), "action": qsTr("保留") }
+            { "name": qsTr("Custom presets, calibration results"), "action": qsTr("Delete") },
+            { "name": qsTr("Software preferences, regional settings"), "action": qsTr("Delete") },
+            { "name": qsTr("Caches and logs"), "action": qsTr("Delete") },
+            { "name": qsTr("Login tokens, cloud service credentials"), "action": qsTr("Delete") },
+            { "name": qsTr("Project files outside the install directory"), "action": qsTr("Keep") }
         ]
         : [
-            { "name": qsTr("自定义预设、校准结果"), "action": qsTr("保留") },
-            { "name": qsTr("软件偏好、地区设置"), "action": qsTr("保留") },
-            { "name": qsTr("缓存与日志"), "action": qsTr("删除") },
-            { "name": qsTr("登录令牌、云服务凭据"), "action": qsTr("删除") },
-            { "name": qsTr("安装目录之外的项目文件"), "action": qsTr("保留") }
+            { "name": qsTr("Custom presets, calibration results"), "action": qsTr("Keep") },
+            { "name": qsTr("Software preferences, regional settings"), "action": qsTr("Keep") },
+            { "name": qsTr("Caches and logs"), "action": qsTr("Delete") },
+            { "name": qsTr("Login tokens, cloud service credentials"), "action": qsTr("Delete") },
+            { "name": qsTr("Project files outside the install directory"), "action": qsTr("Keep") }
         ]
 
     ColumnLayout {
@@ -46,18 +46,18 @@ Item {
 
         Text {
             Layout.fillWidth: true
-            text: qsTr("如何处理个人数据？")
+            text: qsTr("What should happen to personal data?")
             wrapMode: Text.WordWrap
             font.family: theme.fontFamily
             font.pixelSize: theme.fontTitle
             font.weight: Font.DemiBold
             color: theme.text
         }
-        // 导语（.setup-view .lead { margin: 9px 0 24px }）
+        // Lead copy (.setup-view .lead { margin: 9px 0 24px })
         Item { Layout.preferredHeight: 9 }
         Text {
             Layout.fillWidth: true
-            text: qsTr("选择本机数据处理范围。")
+            text: qsTr("Choose the data scope for this machine.")
             wrapMode: Text.WordWrap
             font.family: theme.fontFamily
             lineHeight: 1.7
@@ -66,18 +66,18 @@ Item {
         }
         Item { Layout.preferredHeight: 24 }
 
-        // 两个数据范围选项：默认"保留个人数据"（removeAllData=false）。
+        // Two data scope options: defaults to "Keep personal data" (removeAllData=false).
         Column {
             Layout.fillWidth: true
             spacing: 8
             Repeater {
                 model: [
                     { "removeAll": false,
-                      "title": qsTr("保留个人数据"),
-                      "detail": qsTr("预设、校准结果、偏好与设备信息保留；缓存与登录凭据清除。") },
+                      "title": qsTr("Keep personal data"),
+                      "detail": qsTr("Presets, calibration results, preferences and device info are kept; caches and login credentials are cleared.") },
                     { "removeAll": true,
-                      "title": qsTr("删除本机全部应用数据"),
-                      "detail": qsTr("预设、校准结果、偏好与设备信息一并删除。") }
+                      "title": qsTr("Delete all application data on this machine"),
+                      "detail": qsTr("Presets, calibration results, preferences and device info are deleted as well.") }
                 ]
                 delegate: Rectangle {
                     id: optionCard
@@ -150,7 +150,7 @@ Item {
         }
         Item { Layout.preferredHeight: 14 }
 
-        // 数据分类表：普通 Column + Repeater，避免带 Row 属性的自定义组件。
+        // Data category table: plain Column + Repeater, to avoid a custom component with Row properties.
         Rectangle {
             id: tableColumn
             Layout.fillWidth: true
@@ -174,14 +174,14 @@ Item {
                     height: 26
                     Text {
                         width: parent.width * 0.68
-                        text: qsTr("数据")
+                        text: qsTr("Data")
                         font.family: theme.fontFamily; font.pixelSize: theme.fontSmall
                         font.bold: true; color: theme.muted
                     }
                     Text {
                         x: parent.width * 0.68
                         width: parent.width * 0.32
-                        text: page.removeAllData ? qsTr("删除全部") : qsTr("默认卸载")
+                        text: page.removeAllData ? qsTr("Delete all") : qsTr("Default uninstall")
                         font.family: theme.fontFamily; font.pixelSize: theme.fontSmall
                         font.bold: true; color: theme.muted
                     }
@@ -212,7 +212,7 @@ Item {
                             anchors.verticalCenter: parent.verticalCenter
                             text: rowItem.modelData.action
                             font.family: theme.fontFamily; font.pixelSize: theme.fontSmall
-                            color: rowItem.modelData.action === qsTr("删除") ? theme.danger : theme.muted
+                            color: rowItem.modelData.action === qsTr("Delete") ? theme.danger : theme.muted
                         }
                     }
                 }
@@ -221,14 +221,14 @@ Item {
 
         Item { Layout.fillHeight: true }
 
-        // 操作行贴底（评审稿 .setup-actions { margin-top:auto; padding-top:22px }）
+        // Action row pinned to the bottom (design mockup .setup-actions { margin-top:auto; padding-top:22px })
         RowLayout {
             Layout.fillWidth: true
             Layout.topMargin: 22
             spacing: 9
             Item { Layout.fillWidth: true }
-            UiBtn { text: qsTr("取消"); onClicked: page.cancelRequested() }
-            UiBtn { text: qsTr("下一步"); primary: true; onClicked: page.nextRequested() }
+            UiBtn { text: qsTr("Cancel"); onClicked: page.cancelRequested() }
+            UiBtn { text: qsTr("Next"); primary: true; onClicked: page.nextRequested() }
         }
     }
 }

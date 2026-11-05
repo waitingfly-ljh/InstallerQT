@@ -3,15 +3,15 @@ import QtQuick
 import QtQuick.Layouts
 import SetupUi
 
-// 维护确认页：修复 / 升级 / 降级。降级需勾选风险确认才能继续。
+// Maintenance page: repair / upgrade / downgrade. Downgrade requires acknowledging the risk before continuing.
 Item {
     id: page
 
-    // 页面绘制在 AppFrame 的内容区里（尺寸 = 窗口 − 标题栏/侧栏/内边距）。但页面拿到的
-    // parent 尺寸在这个构造顺序下是 0（AppFrame 布局晚一步才定下来，页面的 anchors.fill
-    // 不会跟着重算），内容区的 ColumnLayout 于是按最窄一行（97px）排版，自动换行的地方
-    // 一律提前折行。所以布局不跟 parent 走，直接按窗口尺寸算内容区。窗口尺寸未知时
-    // （隐身的冒烟副本）退回默认 940×650。
+    // The page is drawn inside AppFrame's content area (size = window − title bar/side bar/padding). But the
+    // parent size the page receives in this construction order is 0 (AppFrame's layout settles a step later, so the page's anchors.fill
+    // is not recalculated), and the content area's ColumnLayout therefore lays out to the narrowest row (97px), wrapping
+    // early wherever it would wrap. So the layout does not follow parent; it computes the content area from the window size directly. When the window size is unknown
+    // (the hidden smoke copy) it falls back to the default 940×650.
     readonly property real contentW: (page.Window.width > 0 ? page.Window.width : theme.windowW)
                                      - theme.sideW - theme.contentPaddingH * 2
     readonly property real contentH: (page.Window.height > 0 ? page.Window.height : theme.windowH)
@@ -25,20 +25,20 @@ Item {
     signal cancelRequested()
     signal riskToggled(bool checked)
 
-    readonly property string title: mode === "repair" ? qsTr("修复 OrbbecSlicer")
-                                  : mode === "upgrade" ? qsTr("升级 OrbbecSlicer")
-                                  : qsTr("降级 OrbbecSlicer")
+    readonly property string title: mode === "repair" ? qsTr("Repair OrbbecSlicer")
+                                  : mode === "upgrade" ? qsTr("Upgrade OrbbecSlicer")
+                                  : qsTr("Downgrade OrbbecSlicer")
     readonly property string lead: mode === "repair"
-        ? qsTr("检测到相同版本。修复会重新写入程序文件，并保留全部用户数据。")
+        ? qsTr("The same version was detected. Repair rewrites the program files and keeps all user data.")
         : mode === "upgrade"
-        ? qsTr("新版本将覆盖现有程序，并迁移兼容的本地配置。")
-        : qsTr("安装包版本低于现有版本。确认风险后才可继续。")
-    readonly property string primaryText: mode === "repair" ? qsTr("开始修复")
-                                        : mode === "upgrade" ? qsTr("开始升级")
-                                        : qsTr("确认并降级")
+        ? qsTr("The new version will overwrite the existing program and migrate compatible local configuration.")
+        : qsTr("The installer version is lower than the existing version. You can continue only after acknowledging the risk.")
+    readonly property string primaryText: mode === "repair" ? qsTr("Start repair")
+                                        : mode === "upgrade" ? qsTr("Start upgrade")
+                                        : qsTr("Acknowledge and downgrade")
     readonly property var retained: [
-        qsTr("自定义预设"), qsTr("校准结果"), qsTr("软件偏好"),
-        qsTr("打印机信息"), qsTr("账号会话"), qsTr("LAN 访问码")
+        qsTr("Custom presets"), qsTr("Calibration results"), qsTr("Software preferences"),
+        qsTr("Printer info"), qsTr("Account session"), qsTr("LAN access code")
     ]
 
     ColumnLayout {
@@ -55,7 +55,7 @@ Item {
             font.weight: Font.DemiBold
             color: theme.text
         }
-        // 导语（.setup-view .lead { margin: 9px 0 24px }）
+        // Lead copy (.setup-view .lead { margin: 9px 0 24px })
         Item { Layout.preferredHeight: 9 }
         Text {
             Layout.fillWidth: true
@@ -68,8 +68,8 @@ Item {
         }
         Item { Layout.preferredHeight: 24 }
 
-        // 评审稿 .version-grid { grid-template-columns: 1fr 54px 1fr; gap: 10px; margin: 18px 0 }。
-        // 固定宽度（内容区宽度随窗口变化，Row 里的 width: parent.width 量不出内容区宽度）。
+        // Design mockup .version-grid { grid-template-columns: 1fr 54px 1fr; gap: 10px; margin: 18px 0 }.
+        // Fixed width (the content area width follows the window, and width: parent.width inside a Row cannot measure the content area).
         Row {
             Layout.topMargin: 18
             spacing: 10
@@ -89,7 +89,7 @@ Item {
                     width: parent.width - 30
                     anchors.leftMargin: 15
                     anchors.verticalCenter: parent.verticalCenter
-                    Text { text: qsTr("当前版本"); font.family: theme.fontFamily; font.pixelSize: theme.fontFoot; color: theme.muted }
+                    Text { text: qsTr("Current version"); font.family: theme.fontFamily; font.pixelSize: theme.fontFoot; color: theme.muted }
                     Item { width: 1; height: 5 }
                     Text { text: page.currentVersion; font.family: theme.fontFamily; font.pixelSize: 18; font.bold: true; color: theme.text }
                 }
@@ -117,14 +117,14 @@ Item {
                     width: parent.width - 30
                     anchors.leftMargin: 15
                     anchors.verticalCenter: parent.verticalCenter
-                    Text { text: qsTr("安装包版本"); font.family: theme.fontFamily; font.pixelSize: theme.fontFoot; color: theme.muted }
+                    Text { text: qsTr("Installer version"); font.family: theme.fontFamily; font.pixelSize: theme.fontFoot; color: theme.muted }
                     Item { width: 1; height: 5 }
                     Text { text: page.targetVersion; font.family: theme.fontFamily; font.pixelSize: 18; font.bold: true; color: theme.text }
                 }
             }
         }
 
-        // 保留清单（.info-card + .retain-list 两列，✓ 前缀为成功色）
+        // Retained list (.info-card + .retain-list two columns, ✓ prefix in the success color)
         Rectangle {
             Layout.topMargin: 18
             Layout.fillWidth: true
@@ -141,13 +141,13 @@ Item {
                 anchors.margins: 14
                 spacing: 2
                 Text {
-                    text: qsTr("以下数据将继续保留")
+                    text: qsTr("The following data will be kept")
                     font.family: theme.fontFamily
                     font.pixelSize: theme.fontBody
                     font.bold: true
                     color: theme.textStrong
                 }
-                // 两列（.retain-list { margin: 12px 0 0; grid-template-columns: 1fr 1fr; gap: 7px 14px }）
+                // Two columns (.retain-list { margin: 12px 0 0; grid-template-columns: 1fr 1fr; gap: 7px 14px })
                 Grid {
                     width: parent.width
                     topPadding: 12
@@ -200,11 +200,11 @@ Item {
                 anchors.top: parent.top
                 anchors.margins: 12
                 spacing: 8
-                Text { text: qsTr("降级可能导致配置不兼容"); font.family: theme.fontFamily; font.pixelSize: theme.fontBody; font.bold: true; color: theme.warningInk }
+                Text { text: qsTr("Downgrading may cause configuration incompatibility"); font.family: theme.fontFamily; font.pixelSize: theme.fontBody; font.bold: true; color: theme.warningInk }
                 Text {
                     wrapMode: Text.WordWrap
                     width: parent.width
-                    text: qsTr("安装前会创建可恢复快照。旧版本无法识别的配置将被隔离，不会直接覆盖。")
+                    text: qsTr("A recoverable snapshot is created before installation. Configuration the old version cannot read will be quarantined rather than overwritten.")
                     font.family: theme.fontFamily; font.pixelSize: theme.fontBody; color: theme.warningInk
                 }
                 Rectangle {
@@ -234,7 +234,7 @@ Item {
                         anchors.left: parent.left
                         anchors.leftMargin: 24
                         anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("我已了解风险，继续安装旧版本")
+                        text: qsTr("I understand the risk and want to install the older version")
                         font.family: theme.fontFamily
                         font.pixelSize: theme.fontBody
                         color: theme.text
@@ -250,13 +250,13 @@ Item {
 
         Item { Layout.fillHeight: true }
 
-        // 操作行贴底（评审稿 .setup-actions { margin-top:auto; padding-top:22px }）
+        // Action row pinned to the bottom (design mockup .setup-actions { margin-top:auto; padding-top:22px })
         RowLayout {
             Layout.fillWidth: true
             Layout.topMargin: 22
             spacing: 9
             Item { Layout.fillWidth: true }
-            UiBtn { text: qsTr("取消"); onClicked: page.cancelRequested() }
+            UiBtn { text: qsTr("Cancel"); onClicked: page.cancelRequested() }
             UiBtn {
                 text: page.primaryText
                 primary: true

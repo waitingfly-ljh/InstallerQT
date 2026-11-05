@@ -1,11 +1,12 @@
-﻿// 单文件启动器（不依赖 Qt）。
+﻿// Single-file launcher (does not depend on Qt).
 //
-// Setup.exe 布局（与 package-setup.ps1 一致）：
-//   [本启动器 exe][bundle.zip][尾部索引: magic 8B "OSUI1", offset 8B, length 8B, sha256 32B, version 4B]
-// bundle.zip 里是 ui/（外壳 exe + Qt 运行时 + qt.conf）与 payload/installer.exe。
+// Setup.exe layout (consistent with package-setup.ps1):
+//   [this launcher exe][bundle.zip][trailer index: magic 8B "OSUI1", offset 8B, length 8B, sha256 32B, version 4B]
+// bundle.zip contains ui/ (shell exe + Qt runtime + qt.conf) and payload/installer.exe.
 //
-// 启动时把 bundle 解到 %TEMP%\OrbbecSlicerSetup\<hash>\，再用 --payload 指向释放出来的
-// 安装包运行 ui\OrbbecSlicerSetup.exe；等界面退出后返回它的退出码并清理释放目录。
+// At startup, extract the bundle to %TEMP%\OrbbecSlicerSetup\<hash>\, then run
+// ui\OrbbecSlicerSetup.exe with --payload pointing at the extracted
+// installer; after the UI exits, return its exit code and clean up the extraction directory.
 #include <windows.h>
 #include <shellapi.h>
 
@@ -48,7 +49,7 @@ void logLine(const wchar_t *fmt, ...)
     va_start(ap, fmt);
     _vsnwprintf_s(buffer, _countof(buffer), _TRUNCATE, fmt, ap);
     va_end(ap);
-    // WIN32 子系统没有控制台：写到 %TEMP%\OrbbecSlicerSetupLauncher.log。
+    // The WIN32 subsystem has no console: write to %TEMP%\OrbbecSlicerSetupLauncher.log.
     wchar_t logPath[MAX_PATH];
     DWORD n = GetEnvironmentVariableW(L"TEMP", logPath, MAX_PATH);
     if (n == 0 || n >= MAX_PATH)
@@ -99,8 +100,8 @@ bool runAndWait(const std::wstring &exe, const std::wstring &args, DWORD &exitCo
     PROCESS_INFORMATION pi{};
     std::vector<wchar_t> mutableCmd(cmd.begin(), cmd.end());
     mutableCmd.push_back(L'\0');
-    // CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP：与控制台脱离，
-    // 父进程所在控制台收到的 Ctrl+C/Ctrl+Break 不会把 tar 一起终止（0xC000013A）。
+    // CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP: detach from the console so that
+    // Ctrl+C/Ctrl+Break received by the parent's console does not terminate tar too (0xC000013A).
     if (!CreateProcessW(exe.c_str(), mutableCmd.data(), nullptr, nullptr, FALSE,
                         CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP, nullptr, nullptr, &si, &pi)) {
         return false;
@@ -122,11 +123,11 @@ int runLauncher()
     HANDLE file = CreateFileW(self.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
                               FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) {
-        logLine(L"无法打开自身: %ls", self.c_str());
+        logLine(L"Cannot open self: %ls", self.c_str());
         return 2;
     }
 
-    // --silent：失败时不要弹 MessageBox（打包/CI 环境没有人点）。
+    // --silent: do not show a MessageBox on failure (no one to click it in packaging/CI).
     bool silent = false;
     {
         int argc = 0;
@@ -146,12 +147,12 @@ int runLauncher()
     if (!packaged) {
         CloseHandle(file);
         if (!silent)
-            MessageBoxW(nullptr, L"这个程序缺少内嵌负载，无法安装。请重新下载完整的安装程序。",
-                        L"OrbbecSlicer 安装程序", MB_ICONERROR | MB_OK);
+            MessageBoxW(nullptr, L"This program is missing its embedded payload and cannot install. Please download the complete installer again.",
+                        L"OrbbecSlicer Installer", MB_ICONERROR | MB_OK);
         return 2;
     }
 
-    // 释放目录：按 payload 的 SHA-256 前 16 位命名，重复运行时复用。
+    // Extraction directory: named after the first 16 bits of the payload's SHA-256, reused on repeated runs.
     wchar_t temp[MAX_PATH];
     DWORD n = GetEnvironmentVariableW(L"TEMP", temp, MAX_PATH);
     std::wstring root = std::wstring(temp, n) + L"\\OrbbecSlicerSetup";
@@ -173,7 +174,7 @@ int runLauncher()
                                  FILE_ATTRIBUTE_NORMAL, nullptr);
         if (out == INVALID_HANDLE_VALUE) {
             CloseHandle(file);
-            logLine(L"无法写出 bundle: %ls", zip.c_str());
+            logLine(L"Cannot write bundle: %ls", zip.c_str());
             return 2;
         }
         LARGE_INTEGER pos;
@@ -199,12 +200,12 @@ int runLauncher()
         CloseHandle(out);
         if (!ok) {
             CloseHandle(file);
-            logLine(L"释放 bundle 失败");
+            logLine(L"Failed to extract bundle");
             return 2;
         }
 
-        // 用 Windows 自带的 tar.exe（bsdtar）解 zip：单文件交付，不需要额外运行时。
-        // 用完整路径，避免调用方清空 PATH 后找不到（干净环境自检会这样做）。
+        // Use the built-in Windows tar.exe (bsdtar) to unpack the zip: single-file delivery needs no extra runtime.
+        // Use the full path so it is still found when the caller clears PATH (the clean-environment selftest does this).
         wchar_t sysRoot[MAX_PATH];
         DWORD sysLen = GetEnvironmentVariableW(L"SystemRoot", sysRoot, MAX_PATH);
         std::wstring tarExe = (sysLen > 0 && sysLen < MAX_PATH)
@@ -214,10 +215,10 @@ int runLauncher()
         DWORD tarCode = 1;
         if (!runAndWait(tarExe, tarArgs, tarCode) || tarCode != 0) {
             CloseHandle(file);
-            logLine(L"tar 解压失败: %lu", tarCode);
+            logLine(L"tar extraction failed: %lu", tarCode);
             if (!silent)
-                MessageBoxW(nullptr, L"安装程序解压失败，请查看 %TEMP%\\OrbbecSlicerSetupLauncher.log。",
-                            L"OrbbecSlicer 安装程序", MB_ICONERROR | MB_OK);
+                MessageBoxW(nullptr, L"Failed to extract the installer, see %TEMP%\\OrbbecSlicerSetupLauncher.log.",
+                            L"OrbbecSlicer Installer", MB_ICONERROR | MB_OK);
             return 2;
         }
         DeleteFileW(zip.c_str());
@@ -229,17 +230,17 @@ int runLauncher()
     CloseHandle(file);
 
     const bool hasPayload = GetFileAttributesW(payload.c_str()) != INVALID_FILE_ATTRIBUTES;
-    // 卸载器 bundle 只有 ui/，没有 payload：以"卸载器模式"运行。
+    // The uninstaller bundle has only ui/ and no payload: run in "uninstaller mode".
     const bool uninstallerMode = !hasPayload;
     if (GetFileAttributesW(uiExe.c_str()) == INVALID_FILE_ATTRIBUTES) {
-        logLine(L"释放结果不完整: ui=%ls", uiExe.c_str());
+        logLine(L"Incomplete extraction result: ui=%ls", uiExe.c_str());
         if (!silent)
-            MessageBoxW(nullptr, L"安装程序解压后缺少文件，请重新下载。", L"OrbbecSlicer 安装程序",
+            MessageBoxW(nullptr, L"Files are missing after extracting the installer, please download again.", L"OrbbecSlicer Installer",
                         MB_ICONERROR | MB_OK);
         return 2;
     }
 
-    // 把原始参数接在 --payload / --uninstaller 之后（UI 侧解析这些参数与 --silent / --log / --selftest）。
+    // Append the original arguments after --payload / --uninstaller (the UI parses these along with --silent / --log / --selftest).
     std::wstring args;
     if (hasPayload)
         args += L"--payload \"" + payload + L"\"";
@@ -262,14 +263,14 @@ int runLauncher()
 
     DWORD exitCode = 1;
     if (!runAndWait(uiExe, args, exitCode)) {
-        logLine(L"无法启动界面: %ls", uiExe.c_str());
+        logLine(L"Cannot start UI: %ls", uiExe.c_str());
         if (!silent)
-            MessageBoxW(nullptr, L"无法启动安装界面，请查看 %TEMP%\\OrbbecSlicerSetupLauncher.log。",
-                        L"OrbbecSlicer 安装程序", MB_ICONERROR | MB_OK);
+            MessageBoxW(nullptr, L"Cannot start the installer UI, see %TEMP%\\OrbbecSlicerSetupLauncher.log.",
+                        L"OrbbecSlicer Installer", MB_ICONERROR | MB_OK);
         return 2;
     }
 
-    // 结束后清理释放目录（文件被占用时删除会失败，留待系统清理）。
+    // Clean up the extraction directory afterwards (deletion fails if files are in use; leave it to system cleanup).
     wchar_t sysRoot2[MAX_PATH];
     DWORD sysLen2 = GetEnvironmentVariableW(L"SystemRoot", sysRoot2, MAX_PATH);
     std::wstring cmdExe = (sysLen2 > 0 && sysLen2 < MAX_PATH)
@@ -294,7 +295,7 @@ int runLauncher()
     runHidden(L"/c rmdir /s /q \"" + dir + L"\"", true);
 
     if (uninstallerMode && !hasSelftest) {
-        // 只有部署在 ...\uninstaller\ 下的卸载器才自删除；构建目录 / selftest 不删。
+        // Only an uninstaller deployed under ...\uninstaller\ self-deletes; build directory / selftest does not delete.
         const std::wstring selfDir = self.substr(0, self.find_last_of(L"\\"));
         const std::wstring selfDirName = selfDir.substr(selfDir.find_last_of(L"\\") + 1);
         if (_wcsicmp(selfDirName.c_str(), L"uninstaller") == 0)

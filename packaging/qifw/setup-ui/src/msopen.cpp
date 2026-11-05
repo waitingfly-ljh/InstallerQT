@@ -18,12 +18,12 @@ namespace MSOpen {
 QString accessName(Access a)
 {
     switch (a) {
-    case Access::Writable: return QStringLiteral("可写");
-    case Access::ReadOnly: return QStringLiteral("只读");
-    case Access::Missing:  return QStringLiteral("不存在");
+    case Access::Writable: return QStringLiteral("Writable");
+    case Access::ReadOnly: return QStringLiteral("Read-only");
+    case Access::Missing:  return QStringLiteral("Does not exist");
     case Access::Unknown:  break;
     }
-    return QStringLiteral("未知");
+    return QStringLiteral("Unknown");
 }
 
 #ifdef Q_OS_WIN
@@ -31,7 +31,7 @@ namespace {
 
 using SidBytes = QVector<BYTE>;
 
-// 模拟令牌：进程令牌的副本（含 SID、组与完整性级别，即"当前用户实际拥有的身份"）。
+// Impersonation token: a copy of the process token (with SID, groups and integrity level, i.e. "the identity the current user actually has").
 struct SessionToken {
     HANDLE token = nullptr;
     ~SessionToken() { if (token) CloseHandle(token); }
@@ -80,8 +80,9 @@ QString sidStr(PSID sid)
 }
 
 bool tokenMemberOf(HANDLE token, PSID sid)
-{    // 用令牌的 SID 列表直接匹配，而不是 CheckTokenMembership：后者对"管理员"这类内建组
-    // 走的是组启用状态之外的兼容逻辑，结果会和 ACE 的实际生效情况对不上。
+{    // Match directly against the token's SID list instead of CheckTokenMembership: the latter uses
+    // compatibility logic beyond group enable state for built-in groups like "Administrators", so results
+    // would not match how the ACE actually takes effect.
     if (!sid || !IsValidSid(sid))
         return false;
     DWORD size = 0;
@@ -103,11 +104,12 @@ bool tokenMemberOf(HANDLE token, PSID sid)
     return false;
 }
 
-// DACL 逐条匹配（DENY 优先、允许位含写位即可写）。不用 AccessCheck：管理员组是巨大位
-// 掩码，带了写位就会让任何检查一律通过；这里只认明确对本令牌生效的 ACE。
-// - 管理员组：只有令牌里该组可用（已提升）时才生效，UAC 未提升时被过滤掉；
-// - 创建者所有者/创建者组：只对新建对象有意义，跳过；
-// - SYSTEM：与能否写无关，跳过。
+// Match DACL entries one by one (DENY takes priority; writable if the allowed bits include a write bit). Do not use
+// AccessCheck: the Administrators group is a huge bit mask, so any write bit would make every check pass; here we
+// only honor ACEs that explicitly take effect for this token.
+// - Administrators group: effective only when that group is enabled in the token (elevated); filtered out when UAC is not elevated;
+// - CREATOR OWNER/CREATOR GROUP: only meaningful for newly created objects, skipped;
+// - SYSTEM: unrelated to whether we can write, skipped.
 bool aclAllowsWrite(HANDLE token, PACL acl, const SidBytes &admin, const SidBytes &system,
                     const SidBytes &creatorOwner, const SidBytes &creatorGroup)
 {
@@ -149,8 +151,8 @@ bool aclAllowsWrite(HANDLE token, PACL acl, const SidBytes &admin, const SidByte
 
 Access accessForNewDirectory(const QString &parentDir)
 {
-    // 在 parentDir 下新建目录 = 对 parentDir 的 FILE_ADD_SUBDIRECTORY；已有目录 = FILE_ADD_FILE。
-    // 两者都在 aclAllowsWrite 的写位里，所以对父目录做一次同样的判断即可。
+    // Creating a new directory under parentDir = FILE_ADD_SUBDIRECTORY on parentDir; existing directory = FILE_ADD_FILE.
+    // Both are within aclAllowsWrite's write bits, so a single equivalent check on the parent directory suffices.
     SessionToken t;
     if (!openSessionToken(t))
         return Access::Unknown;
@@ -214,7 +216,7 @@ Access effectiveAccess(const QString &dirPath)
         return Access::Missing;
     if (!existing.isDir())
         return Access::Unknown;
-    // 目录还不存在：能否新建取决于第一个存在祖先的"新建子目录"权限。
+    // The directory does not exist yet: whether it can be created depends on the first existing ancestor's "create subdirectory" permission.
     if (QDir::cleanPath(dir) != QDir::cleanPath(given))
         return accessForNewDirectory(dir);
 

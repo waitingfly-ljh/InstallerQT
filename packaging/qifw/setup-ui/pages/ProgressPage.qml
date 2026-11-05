@@ -3,28 +3,28 @@ import QtQuick
 import QtQuick.Layouts
 import SetupUi
 
-// 安装过程页：任务名、百分比、进度条、细节行、取消。
-// 进度来自 Host.engine 的真实输出（阶段 + 事件），不播放固定动画。
+// Progress page: task name, percentage, progress bar, detail line, cancel.
+// Progress comes from Host.engine's real output (phase + events); no fixed animation is played.
 Item {
     id: page
     UiTheme { id: theme }
-    // 页面绘制在 AppFrame 的内容区里（尺寸 = 窗口 − 标题栏/侧栏/内边距）。但页面拿到的
-    // parent 尺寸在这个构造顺序下是 0（AppFrame 布局晚一步才定下来，页面的 anchors.fill
-    // 不会跟着重算），内容区的 ColumnLayout 于是按最窄一行（97px）排版，自动换行的地方
-    // 一律提前折行。所以布局不跟 parent 走，直接按窗口尺寸算内容区。窗口尺寸未知时
-    // （隐身的冒烟副本）退回默认 940×650。
+    // The page is drawn inside AppFrame's content area (size = window − title bar/side bar/padding). But the
+    // parent size the page receives in this construction order is 0 (AppFrame's layout settles a step later, so the page's anchors.fill
+    // is not recalculated), and the content area's ColumnLayout therefore lays out to the narrowest row (97px), wrapping
+    // early wherever it would wrap. So the layout does not follow parent; it computes the content area from the window size directly. When the window size is unknown
+    // (the hidden smoke copy) it falls back to the default 940×650.
     readonly property real contentW: (page.Window.width > 0 ? page.Window.width : theme.windowW)
                                      - theme.sideW - theme.contentPaddingH * 2
     readonly property real contentH: (page.Window.height > 0 ? page.Window.height : theme.windowH)
                                      - theme.titleBarH - theme.contentPaddingV - 24
 
-    property string heading: qsTr("正在安装 OrbbecSlicer")
-    property string lead: qsTr("请保持窗口开启。安装过程不会上传本机项目或用户预设。")
+    property string heading: qsTr("Installing OrbbecSlicer")
+    property string lead: qsTr("Keep this window open. The installation does not upload local projects or user presets.")
     property string phase: Host.engine.phase
     property int progress: Host.engine.progress
     property string detail: Host.engine.detail
     property bool canCancel: true
-    // 收尾阶段：引擎已结束，进度固定显示 100%，取消按钮禁用。
+    // Final stage: the engine has finished, progress is pinned at 100%, and Cancel is disabled.
     property bool complete: false
     signal cancelRequested()
 
@@ -45,7 +45,7 @@ Item {
             font.weight: Font.DemiBold
             color: theme.text
         }
-        // 导语（.setup-view .lead { margin: 9px 0 24px }：上 9、下 24）
+        // Lead copy (.setup-view .lead { margin: 9px 0 24px }: 9 above, 24 below)
         Item { Layout.preferredHeight: 9 }
         Text {
             Layout.fillWidth: true
@@ -58,13 +58,13 @@ Item {
         }
         Item { Layout.preferredHeight: 24 }
 
-        // 评审稿 .progress-visual { width: min(500px, 100%); margin: 58px auto 20px }。
-        // 横向居中、纵向排在导语下方；取消行由下面的 fillHeight 间隔顶到底。
-        // 宽度直接取页面实际宽度的 50%（940−228−92 = 620 → 500），不受布局改写 width 的影响。
+        // Design mockup .progress-visual { width: min(500px, 100%); margin: 58px auto 20px }.
+        // Centered horizontally, placed below the lead vertically; the cancel row is pushed to the bottom by the fillHeight spacer below.
+        // The width takes 50% of the page's actual width (940−228−92 = 620 → 500), unaffected by the layout overriding width.
         Item {
             id: visual
             Layout.fillWidth: true
-            Layout.topMargin: 58 + 20              // margin: 58px ... 20px → 上 58 = 导语后 24 + 34；下 20 由 fillHeight 间隔给
+            Layout.topMargin: 58 + 20              // margin: 58px ... 20px → 58 above = 24 after lead + 34; the 20 below comes from the fillHeight spacer
             Layout.preferredHeight: visualCol.implicitHeight
             Layout.alignment: Qt.AlignHCenter
 
@@ -74,8 +74,8 @@ Item {
                 anchors.horizontalCenter: parent.horizontalCenter
                 spacing: 9
 
-                // 标题行（.progress-title { display:flex; justify-content:space-between; margin-bottom:9px }）：
-                // 任务名左、百分比右。用锚定而不是 Row：Row 不会给绝对定位的百分比让位。
+                // Title row (.progress-title { display:flex; justify-content:space-between; margin-bottom:9px }):
+                // task name left, percentage right. Use anchors instead of Row: Row would not leave room for the absolutely positioned percentage.
                 Item {
                     width: parent.width
                     height: percentText.height > phaseText.height ? percentText.height : phaseText.height
@@ -104,7 +104,7 @@ Item {
                     }
                 }
 
-                // .progress-track { height: 9px; border-radius: 20px; background: 浅灰 }
+                // .progress-track { height: 9px; border-radius: 20px; background: light gray }
                 Rectangle {
                     id: track
                     width: parent.width
@@ -117,7 +117,7 @@ Item {
                         height: parent.height
                         radius: 20
                         width: parent.width * Math.max(0, Math.min(1, (page.complete ? 100 : page.progress) / 100))
-                        // .progress-fill: linear-gradient(90deg, 品牌色, 品牌浅色)
+                        // .progress-fill: linear-gradient(90deg, brand color, brand light color)
                         gradient: Gradient {
                             orientation: Gradient.Horizontal
                             GradientStop { position: 0.0; color: theme.brand }
@@ -130,7 +130,7 @@ Item {
                 // .progress-detail { margin-top: 11px; text-align: center }
                 Text {
                     width: parent.width
-                    topPadding: 2                     // 列距 9 + 2 = 11
+                    topPadding: 2                     // column gap 9 + 2 = 11
                     horizontalAlignment: Text.AlignHCenter
                     text: page.detail
                     wrapMode: Text.WordWrap
@@ -142,14 +142,14 @@ Item {
         }
 
         Item { Layout.fillHeight: true }
-        // 操作行贴底（评审稿 .setup-actions { margin-top:auto; padding-top:22px }）
+        // Action row pinned to the bottom (design mockup .setup-actions { margin-top:auto; padding-top:22px })
         RowLayout {
             Layout.fillWidth: true
             Layout.topMargin: 22
             spacing: 9
             Item { Layout.fillWidth: true }
             UiBtn {
-                text: qsTr("取消")
+                text: qsTr("Cancel")
                 enabledState: page.canCancel && !page.complete
                 onClicked: page.cancelRequested()
             }

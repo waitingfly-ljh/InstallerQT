@@ -1,10 +1,10 @@
-// 品牌标记：绿色圆角方块 + 内嵌浅色方块（对应评审稿 .brand-mark 与 ::after）。
+// Brand mark: green rounded square + inset light square (corresponds to design mockup .brand-mark and ::after).
 import QtQuick
 
 Item {
     id: root
-    UiTheme { id: theme }   // 视觉令牌实例，见 UiTheme.qml 顶部说明
-    // 颜色默认取品牌色，使用方可覆盖。
+    UiTheme { id: theme }   // Visual token instance, see the notes at the top of UiTheme.qml
+    // Colors default to the brand color; callers may override.
     property color base: theme.brand
     property color accent: theme.brandSoft
     implicitWidth: 14

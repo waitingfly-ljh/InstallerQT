@@ -1,28 +1,28 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-  生成自包含的品牌化卸载器 OrbbecSlicerUninstaller.exe。
+  Generate the self-contained branded uninstaller OrbbecSlicerUninstaller.exe.
 
 .DESCRIPTION
-  与 package-setup.ps1 相同的单文件布局，但 bundle 只含 ui/（外壳 exe + Qt 运行时），
-  不含 payload：
+  Same single-file layout as package-setup.ps1, but the bundle contains only ui/ (shell exe + Qt runtime),
+  no payload:
 
-    [启动器 exe][bundle.zip: ui/][尾部索引 OSUI1]
+    [launcher exe][bundle.zip: ui/][trailer index OSUI1]
 
-  启动器解压到 %TEMP%\OrbbecSlicerSetup\<hash>\，以 --uninstall 运行 ui\OrbbecSlicerSetup.exe；
-  退出后删除临时目录，并在卸载器模式下延迟删除自身目录（%LOCALAPPDATA%\...\uninstaller\）。
+  The launcher extracts to %TEMP%\OrbbecSlicerSetup\<hash>\ and runs ui\OrbbecSlicerSetup.exe with --uninstall;
+  after it exits, the temp directory is deleted and, in uninstaller mode, its own directory is deleted with a delay (%LOCALAPPDATA%\...\uninstaller\).
 
 .PARAMETER LauncherExe
-  build-setup.ps1 产出的 OrbbecSlicerSetupLauncher.exe（不依赖 Qt）。
+  The OrbbecSlicerSetupLauncher.exe produced by build-setup.ps1 (does not depend on Qt).
 
 .PARAMETER UiDir
-  部署后的外壳目录（dist/）。
+  The deployed shell directory (dist/).
 
 .PARAMETER OutputPath
-  输出路径；缺省为 <UiDir>\..\build\OrbbecSlicerUninstaller.exe。
+  Output path; defaults to <UiDir>\..\build\OrbbecSlicerUninstaller.exe.
 
 .PARAMETER Version
-  写入尾部索引的版本（4 字节 ASCII）。
+  Version written into the trailer index (4-byte ASCII).
 #>
 [CmdletBinding()]
 param(
@@ -44,7 +44,7 @@ function Fail([string]$Message) {
 $LauncherExe = (Resolve-Path -LiteralPath $LauncherExe).ProviderPath
 $UiDir = (Resolve-Path -LiteralPath $UiDir).ProviderPath
 if (-not (Test-Path -LiteralPath (Join-Path $UiDir 'OrbbecSlicerSetup.exe'))) {
-    Fail "UiDir 里没有 OrbbecSlicerSetup.exe: $UiDir"
+    Fail "OrbbecSlicerSetup.exe not found in UiDir: $UiDir"
 }
 if (-not $OutputPath) {
     $OutputPath = Join-Path (Split-Path -Parent $UiDir) 'build\OrbbecSlicerUninstaller.exe'
@@ -56,9 +56,9 @@ $verBytes = [System.Text.Encoding]::ASCII.GetBytes($Version)
 $ver4 = New-Object byte[] 4
 [Array]::Copy($verBytes, $ver4, [Math]::Min(4, $verBytes.Length))
 
-Write-Host "[uninstaller] 启动器: $LauncherExe"
-Write-Host "[uninstaller] 界面目录: $UiDir"
-Write-Host "[uninstaller] 输出: $OutputPath"
+Write-Host "[uninstaller] Launcher: $LauncherExe"
+Write-Host "[uninstaller] UI directory: $UiDir"
+Write-Host "[uninstaller] Output: $OutputPath"
 
 $work = Join-Path (Split-Path -Parent $OutputPath) ('.uninstaller-bundle-' + [guid]::NewGuid().ToString('N'))
 $uiStage = Join-Path $work 'ui'
@@ -86,7 +86,7 @@ try {
     if ($tar.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $bundle)) {
         Get-Content -LiteralPath (Join-Path $work 'tar.err') -Encoding UTF8 -ErrorAction SilentlyContinue |
             ForEach-Object { Write-Host $_ }
-        Fail "打包 bundle 失败（tar exit $($tar.ExitCode)）"
+        Fail "Failed to package bundle (tar exit $($tar.ExitCode))"
     }
     $bundleLen = (Get-Item -LiteralPath $bundle).Length
 
@@ -112,27 +112,27 @@ try {
         $out.Dispose()
     }
 
-    # 自检：解析尾部索引并重算 bundle 哈希
+    # Self-check: parse the trailer index and recompute the bundle hash
     $trailerSize = 8 + 8 + 8 + 32 + 4
     $check = [System.IO.File]::OpenRead($OutputPath)
     try {
         $setupLen = $check.Length
-        if ($setupLen -ne ($launcherLen + $bundleLen + $trailerSize)) { Fail "输出大小不符: $setupLen" }
+        if ($setupLen -ne ($launcherLen + $bundleLen + $trailerSize)) { Fail "Output size mismatch: $setupLen" }
         $check.Seek($setupLen - $trailerSize, [System.IO.SeekOrigin]::Begin) | Out-Null
         $trailer = New-Object byte[] $trailerSize
-        if ($check.Read($trailer, 0, $trailerSize) -ne $trailerSize) { Fail '尾部索引读取不完整' }
-        if ([System.Text.Encoding]::ASCII.GetString($trailer, 0, 5) -ne 'OSUI1') { Fail '尾部 magic 不符' }
+        if ($check.Read($trailer, 0, $trailerSize) -ne $trailerSize) { Fail 'Trailer index read incomplete' }
+        if ([System.Text.Encoding]::ASCII.GetString($trailer, 0, 5) -ne 'OSUI1') { Fail 'Trailer magic mismatch' }
         if ([BitConverter]::ToInt64($trailer, 8) -ne $launcherLen -or
-            [BitConverter]::ToInt64($trailer, 16) -ne $bundleLen) { Fail '尾部索引偏移/长度不符' }
+            [BitConverter]::ToInt64($trailer, 16) -ne $bundleLen) { Fail 'Trailer index offset/length mismatch' }
         $expect = New-Object byte[] 32
         [Array]::Copy($trailer, 24, $expect, 0, 32)
-        if ([BitConverter]::ToString($expect) -ne [BitConverter]::ToString($bundleHash)) { Fail 'bundle SHA-256 自检失败' }
+        if ([BitConverter]::ToString($expect) -ne [BitConverter]::ToString($bundleHash)) { Fail 'bundle SHA-256 self-check failed' }
     } finally {
         $check.Dispose()
     }
 
     $size = (Get-Item -LiteralPath $OutputPath).Length
-    Write-Host ("[uninstaller] 完成: {0} = {1:N0} B（启动器 {2:N0} B + bundle {3:N0} B）" -f `
+    Write-Host ("[uninstaller] Done: {0} = {1:N0} B (launcher {2:N0} B + bundle {3:N0} B)" -f `
             [System.IO.Path]::GetFileName($OutputPath), $size, $launcherLen, $bundleLen)
     [ordered]@{
         launcherExe = $LauncherExe

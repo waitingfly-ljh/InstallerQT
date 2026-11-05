@@ -1,7 +1,8 @@
-﻿// 当前令牌与目录访问检查（Windows）：结果与文件管理器里"能不能往这个文件夹里放文件"一致。
-// 注意：不要用"试着写一个临时文件"来判断。OpenFile 走的是用户态提升回退
-// （AppInfo 自动提升清单、UAC 虚拟化），普通用户往 Program Files / C:\Windows 里建文件
-// 常常"成功"，实际那不是安装程序会写入的位置。这里用身份模拟 + 逐条 ACE 匹配算有效权限。
+﻿// Current token and directory access check (Windows): results match "can files be put into this folder" in File Explorer.
+// Note: do not judge by "trying to write a temporary file". OpenFile goes through user-mode elevation fallback
+// (AppInfo auto-elevation manifest, UAC virtualization), so an ordinary user often "succeeds" creating a file
+// in Program Files / C:\Windows, but that is not the location the installer would actually write to. Here we use
+// identity impersonation + per-ACE matching to compute effective permissions.
 #pragma once
 
 #include <QString>
@@ -9,22 +10,22 @@
 namespace MSOpen {
 
 enum class Access {
-    Writable, // 能在目录里新建文件
-    ReadOnly, // 目录存在，但没有修改权限
-    Missing,  // 目录不存在（或其上级不存在）
-    Unknown,  // 枚举失败：无法判断
+    Writable, // Can create new files in the directory
+    ReadOnly, // Directory exists but there is no modify permission
+    Missing,  // Directory does not exist (or its parent does not)
+    Unknown,  // Enumeration failed: cannot determine
 };
 
 QString accessName(Access a);
 
-// 进程是否以管理员身份运行（令牌里管理员组可用，即已提升）。
+// Whether the process runs as administrator (the Administrators group is enabled in the token, i.e. elevated).
 bool isAdmin();
 
-// 目录访问：对不存在的目录，返回第一个存在的祖先的访问情况。
+// Directory access: for a nonexistent directory, returns the access state of the first existing ancestor.
 Access effectiveAccess(const QString &dirPath);
 
-// 在 parentDir 下新建目录是否有权限（对父目录的 FILE_ADD_SUBDIRECTORY）。
-// parentDir 必须已存在；调用方负责检查。Unknown 视为放行。
+// Whether there is permission to create a new directory under parentDir (FILE_ADD_SUBDIRECTORY on the parent).
+// parentDir must already exist; the caller is responsible for checking. Unknown is treated as allowed.
 Access accessForNewDirectory(const QString &parentDir);
 
 } // namespace MSOpen

@@ -1,6 +1,6 @@
-// 自检入口：以最小平台加载同一套界面组件，验证 QML 模块与运行时依赖可用。
-// 主程序 --selftest 时加载本组件而不是 Main（Main 的根是 Window，最小平台下也
-// 可以创建，但这里刻意只做"编译 + 实例化"，不进入窗口展示流程）。
+// Self-test entry: loads the same UI component set on the minimal platform to verify the QML module and runtime dependencies are available.
+// The main program loads this component instead of Main during --selftest (Main's root is a Window, which can also
+// be created on the minimal platform, but here we deliberately do only "compile + instantiate" without entering the window display flow).
 import QtQuick
 import SetupUi
 

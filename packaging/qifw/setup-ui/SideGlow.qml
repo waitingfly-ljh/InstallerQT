@@ -1,17 +1,17 @@
 // SideGlow.qml
 import QtQuick
 
-// 侧栏左上角的径向光斑，对应评审稿：
+// Radial glow at the sidebar's top-left, corresponding to the design mockup:
 //   radial-gradient(circle at 10% 18%, rgba(55,192,184,.35), transparent 35%)
-// 画在 228×300 的画布上（侧栏宽 × 900px 视口下侧栏高；AppFrame 按实际尺寸拉伸），
-// 圆心 (10%, 18%)，渐变半径 = 离圆心最远的角（CSS 的 farthest-corner）。
+// Drawn on a 228×300 canvas (sidebar width × sidebar height at a 900px viewport; AppFrame stretches to actual size),
+// center (10%, 18%), gradient radius = farthest corner from the center (CSS farthest-corner).
 //
-// 为什么不用 Rectangle 拼同心圆：圆角矩形叠起来会露出"台阶"。这里逐像素算径向渐变，但
-// 透明度只在 34..255 之间按 14 档量化——全精度的 8 位 alpha 在软件渲染下会出现同心环，
-// 量化后相邻档差 14/255，肉眼看不出。
+// Why not stack Rectangles into concentric circles: rounded rectangles reveal "steps". Here the radial gradient is computed per pixel, but
+// alpha is quantized into 14 levels between 34..255 — full-precision 8-bit alpha produces concentric rings under software rendering,
+// while after quantization the adjacent level difference is 14/255, invisible to the eye.
 //
-// 运行时显示的是 resources/glow.png（qrc:/glow.png），这张 Canvas 只是同一公式的可视化参考：
-// 改了 alphaAt 的公式后要按它重新生成 glow.png，否则图像和代码会对不上。
+// At runtime resources/glow.png (qrc:/glow.png) is shown; this Canvas is only a visual reference for the same formula:
+// after changing the alphaAt formula, regenerate glow.png accordingly, or the image and code will diverge.
 Item {
     id: glow
     width: 228
@@ -23,10 +23,10 @@ Item {
     readonly property real farCorner: Math.max(Math.sqrt(Math.pow(width - cx, 2) + Math.pow(cy, 2)),
                                                Math.sqrt(Math.pow(cx, 2) + Math.pow(height - cy, 2)))
 
-    // 返回这一点的 alpha（0..255），生成器与 Canvas 预览共用同一份算法。
+    // Return the alpha (0..255) at this point; the generator and Canvas preview share the same algorithm.
     function alphaAt(px, py) {
         const d = Math.sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy)) / farCorner
-        const fade = Math.max(0, 1 - d)                  // 线性收尾
+        const fade = Math.max(0, 1 - d)                  // linear falloff
         return Math.min(255, 34 + Math.round(fade * 0.35 * (255 - 34) / 14) * 14)
     }
 

@@ -1,50 +1,50 @@
 ﻿pragma ComponentBehavior: Bound
 import QtQuick
 
-// 安装器界面状态：页面流、安装选项、已安装版本判定。
-// 界面只在这里决定"显示哪一屏"，实际安装/卸载由 Host.engine 执行。
+// Installer UI state: page flow, install options, installed-version detection.
+// The UI decides "which screen to show" only here; actual install/uninstall is executed by Host.engine.
 QtObject {
     id: ctl
 
-    // --- 页面流 ---
+    // --- Page flow ---
     // options | maintenance | progress | complete | failure | dataScope | confirm | uninstalled
     property string view: "options"
     property bool uninstalling: false
     readonly property var installSteps: [
-        { "label": qsTr("安装设置"), "state": installStepState(0) },
-        { "label": qsTr("安装过程"), "state": installStepState(1) },
-        { "label": qsTr("安装完成"), "state": installStepState(2) }
+        { "label": qsTr("Install options"), "state": installStepState(0) },
+        { "label": qsTr("Installing"), "state": installStepState(1) },
+        { "label": qsTr("Finish"), "state": installStepState(2) }
     ]
     function installStepState(i) {
         if (flowView === "options") return i === 0 ? "active" : "pending"
         if (flowView === "progress") return i === 0 ? "done" : i === 1 ? "active" : "pending"
         if (flowView === "failure") return i === 0 ? "done" : i === 1 ? "active" : "pending"
-        // complete（含维护完成）都在最后一屏
+        // complete (including maintenance completion) is always the last screen
         return i < 2 ? "done" : "active"
     }
     readonly property var uninstallSteps: [
-        { "label": qsTr("数据范围"), "state": uninstallStepState(0) },
-        { "label": qsTr("确认卸载"), "state": uninstallStepState(1) },
-        { "label": qsTr("卸载完成"), "state": uninstallStepState(2) }
+        { "label": qsTr("Data scope"), "state": uninstallStepState(0) },
+        { "label": qsTr("Confirm uninstall"), "state": uninstallStepState(1) },
+        { "label": qsTr("Uninstall complete"), "state": uninstallStepState(2) }
     ]
     function uninstallStepState(i) {
         if (flowView === "dataScope") return i === 0 ? "active" : "pending"
         if (flowView === "confirm") return i === 0 ? "done" : i === 1 ? "active" : "pending"
         if (flowView === "progress") return i < 2 ? "done" : "active"
         if (flowView === "uninstalled") return i < 2 ? "done" : "active"
-        // 卸载过程中失败：停在第二步
+        // Failure during uninstall: stay on the second step
         return i < 2 ? "done" : "pending"
     }
     readonly property var steps: uninstalling ? uninstallSteps : installSteps
 
-    // 截图（--view）专用的流程视图：截图模式下引擎没在跑，ctl.view 由 App.qml 按 --view 摆位。
-    // 侧栏步骤表以它为准，而不是直接看 ctl.view：截图外壳的页面靠 StackLayout 的 currentIndex
-    // 显示，页面自身的 visible 被设成 false 不生效（见 App.qml applyShotState）。
-    // 普通启动里 setView() 从不被调用，它恒等于 view。
+    // Flow view used only for screenshots (--view): the engine is not running in screenshot mode, and ctl.view is positioned by App.qml according to --view.
+    // The sidebar step list follows it rather than ctl.view directly: the screenshot shell's pages are shown via StackLayout's currentIndex,
+    // and each page's own visible set to false does not take effect (see App.qml applyShotState).
+    // In normal launches setView() is never called, so it is always equal to view.
     property string flowView: view
 
-    // 内容区 StackLayout 的 currentIndex（Main.qml 与截图外壳共用这一个映射）。
-    // 截图时 App.qml 调 setView() 摆位，侧栏步骤表也按 flowView 算。
+    // currentIndex of the content-area StackLayout (shared by Main.qml and the screenshot shell).
+    // During screenshots App.qml calls setView() to position, and the sidebar step list is also computed from flowView.
     function setView(v) {
         view = v
         flowView = v
@@ -62,9 +62,9 @@ QtObject {
         return 0
     }
 
-    // --- 安装选项 ---
+    // --- Install options ---
     property QtObject installOptions: QtObject {
-        // 界面收集/显示的是父文件夹；installDir 是由它拼出的最终安装目录（引擎入参）。
+        // The UI collects/displays the parent folder; installDir is the final install directory derived from it (engine input).
         property string installParentDir: ""
         property string installDir: ""
         property bool shortcutDesktop: true
@@ -81,13 +81,13 @@ QtObject {
         installOptions.launchAfterInstall = true
     }
 
-    // --- 已安装版本 ---
+    // --- Installed version ---
     property var installed: ({ "installed": false, "version": "", "installDir": "" })
     property string targetVersion: Host.payloadVersion
     property bool riskAcknowledged: false
-    // 本次安装流程的意图：在点击"安装"时从 mode 固化下来。
-    // 安装成功后 installed 会变成"已安装且版本相同"，mode 会变成 repair；
-    // 完成页不能再用重算后的 mode，否则全新安装会显示"修复完成"。
+    // Intent of this install flow: frozen from mode when "Install" is clicked.
+    // After a successful install, installed becomes "installed with the same version" and mode becomes repair;
+    // the complete page must not use the recomputed mode, otherwise a fresh install would show "Repair complete".
     property string runMode: "fresh"
     readonly property string mode: {
         if (!installed.installed) return "fresh"
@@ -104,27 +104,27 @@ QtObject {
         return 0
     }
 
-    // --- 失败与卸载 ---
+    // --- Failure and uninstall ---
     property int failureCode: -1
     property string failureCodeText: ""
     property string failureMessage: ""
     property bool removeAllData: false
     property bool keepDataDir: false
     property bool cancelled: false
-    // 进度收尾：成功时显示 100% 并停留，失败/取消也短暂停留后再切页。
+    // Progress wrap-up: show 100% and pause on success; on failure/cancel also pause briefly before switching pages.
     property bool finishing: false
     property int pendingCode: -1
     property string pendingSummary: ""
     readonly property int displayProgress: finishing ? 100 : Host.engine.progress
 
-    // QtObject 没有默认属性，子对象必须挂到具体属性上。
+    // QtObject has no default property, so child objects must be attached to a concrete property.
     property Timer finishTimer: Timer {
         interval: 600
         repeat: false
         onTriggered: ctl.applyFinish()
     }
 
-    // 从系统卸载入口启动（--uninstall）：跳过维护判断，直接进入卸载流程。
+    // Launched from the system uninstall entry (--uninstall): skip maintenance detection and go straight to the uninstall flow.
     readonly property bool uninstallOnly: typeof uninstallMode !== "undefined" && uninstallMode === true
     readonly property string installDirOverride: (typeof installDirPath !== "undefined"
                                                   && installDirPath !== null) ? String(installDirPath) : ""
@@ -151,11 +151,11 @@ QtObject {
         runMode = mode
         cancelled = false
         if (installed.installed) {
-            // 维护（修复/升级/降级）必须落回原来的安装目录：即使历史上装成过自定义目录名，
-            // 也不能因为父文件夹语义被改到 <parent>\OrbbecSlicer。
+            // Maintenance (repair/upgrade/downgrade) must stay in the original install directory: even if a custom directory name was used historically,
+            // it must not be redirected to <parent>\OrbbecSlicer due to parent-folder semantics.
             installOptions.installDir = Host.normalizeDirPath(installOptions.installDir)
         } else {
-            // 全新安装：由父文件夹算出最终目录（"D:"、尾部斜杠等写法在这里统一）。
+            // Fresh install: compute the final directory from the parent folder ("D:", trailing slashes, etc. are normalized here).
             const parent = installOptions.installParentDir.length > 0
                          ? installOptions.installParentDir
                          : Host.defaultInstallParent()
@@ -165,7 +165,7 @@ QtObject {
         if (installOptions.installDir.length === 0) {
             failureCode = 2
             failureCodeText = "2"
-            failureMessage = qsTr("安装位置为空，请重新填写。")
+            failureMessage = qsTr("Install location is empty, please enter it again.")
             view = "failure"
             return
         }
@@ -207,7 +207,7 @@ QtObject {
     }
 
     function onEngineCancelled() {
-        // 取消也短暂停留，避免进度条瞬间消失。
+        // Cancel also pauses briefly to avoid the progress bar vanishing instantly.
         pendingCode = -1
         finishing = false
         finishTimer.stop()
