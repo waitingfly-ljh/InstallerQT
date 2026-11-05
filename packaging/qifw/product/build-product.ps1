@@ -5,7 +5,7 @@
 
 .DESCRIPTION
   只读引用原项目的两个位置：
-    - <StageRoot>           产品 staging 树（默认 stage24\stage）
+    - <StageRoot>           产品 staging 树（默认 <UpstreamRepo>\build\presets\windows-release\OrbbecSlicer）
     - <UpstreamRepo>\version.inc 的 set(SLICER_APP_VERSION "...")
 
   本仓库的写入只有 out/product/<时间戳>/ 与 out/staging-work/<时间戳>/：
@@ -22,6 +22,8 @@
 
 .PARAMETER StageRoot
   staging 树路径。必须是绝对路径且存在；只读。
+  留空（默认）时解析为 <UpstreamRepo>\build\presets\windows-release\OrbbecSlicer，
+  即原项目 CMake preset 的安装产物（原项目已不再提供 packaging\windows\dist）。
 
 .PARAMETER UpstreamRepo
   原项目根（用于读 version.inc）。只读。
@@ -38,7 +40,8 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$StageRoot = 'D:\Orbbec\orbbecslicer\packaging\windows\dist\stage24\stage',
+    # 留空 ⇒ <UpstreamRepo>\build\presets\windows-release\OrbbecSlicer（在下方解析）
+    [string]$StageRoot = '',
     [string]$UpstreamRepo = 'D:\Orbbec\orbbecslicer',
     [ValidateSet(0, 1, 3, 5, 7, 9)][int]$Compression = 5,
     [string]$ArchiveFormat = '7z',
@@ -58,6 +61,11 @@ $Manifest = Get-ToolchainManifest -RepoRoot $RepoRoot
 $IfwBin = Join-Path (Resolve-RepoPath -RelativePath $Manifest.ifw.installDir -RepoRoot $RepoRoot) 'bin'
 $binarycreator = Join-Path $IfwBin 'binarycreator.exe'
 $installerbase = Join-Path $IfwBin 'installerbase.exe'
+
+# 默认 staging = 原项目 CMake preset 的安装产物（原项目已删除 packaging\windows\dist）
+if ([string]::IsNullOrWhiteSpace($StageRoot)) {
+    $StageRoot = Join-Path $UpstreamRepo 'build\presets\windows-release\OrbbecSlicer'
+}
 
 $Stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $OutDir = Resolve-RepoPath "packaging/qifw/out/product/$Stamp" -RepoRoot $RepoRoot

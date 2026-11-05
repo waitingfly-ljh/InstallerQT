@@ -67,7 +67,19 @@ try {
     Copy-Item -Path (Join-Path $UiDir '*') -Destination $uiStage -Recurse -Force
 
     $bundle = Join-Path $work 'bundle.zip'
-    $tar = Start-Process -FilePath 'tar.exe' `
+    # 必须用 Windows 自带的 tar（bsdtar，支持 -a 按扩展名出 zip）；
+    # 若 PATH 里 Git 的 tar（MSYS/GNU tar）在前，-a 会把它当远程主机名而失败，
+    # 因此显式取 System32\bsdtar.exe，其次在 PATH 中挑非 Git 的 Win32 tar。
+    $tarExe = Join-Path $env:SystemRoot 'System32\bsdtar.exe'
+    if (-not (Test-Path -LiteralPath $tarExe)) { $tarExe = Join-Path $env:SystemRoot 'System32\tar.exe' }
+    if (-not (Test-Path -LiteralPath $tarExe)) {
+        $cand = Get-Command tar.exe -All -ErrorAction SilentlyContinue |
+            Where-Object { $_.Source -notmatch '[\\/](git|usr|mingw|msys)[\\/]' } |
+            Select-Object -First 1
+        if (-not $cand) { Fail '找不到 Windows 自带的 tar.exe（System32\bsdtar.exe），无法打包 bundle' }
+        $tarExe = $cand.Source
+    }
+    $tar = Start-Process -FilePath $tarExe `
         -ArgumentList @('-a', '-c', '-f', $bundle, '-C', $work, 'ui') `
         -NoNewWindow -Wait -PassThru `
         -RedirectStandardOutput (Join-Path $work 'tar.log') -RedirectStandardError (Join-Path $work 'tar.err')
