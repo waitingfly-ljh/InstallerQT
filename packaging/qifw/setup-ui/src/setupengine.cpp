@@ -84,16 +84,29 @@ void setAssociation(QSettings &record, const QString &ext, bool enabled, const Q
         type.setValue(QStringLiteral("."), progId);
         type.setValue(QStringLiteral("OpenWithProgids/") + progId, QString());
         type.sync();
-    } else if (record.contains(savedKey)) {
-        const QString previous = record.value(savedKey).toString();
-        if (previous.isEmpty())
-            type.remove(QStringLiteral("."));
-        else
-            type.setValue(QStringLiteral("."), previous);
-        type.remove(QStringLiteral("OpenWithProgids/") + progId);
-        type.sync();
-        record.remove(savedKey);
-        QSettings(classesKey(progId), QSettings::NativeFormat).clear();
+    } else {
+        // Revert: restore the recorded previous program, then drop our own ProgId.
+        // The record can be missing when the association was already ours before this install
+        // (for example left over from an interrupted run, or a failed uninstall); in that case the
+        // extension still has to be cleared, otherwise the stale .3mf/ProgId survives every later
+        // uninstall and no run can ever get back to a clean state.
+        const QString current = type.value(QStringLiteral(".")).toString();
+        const bool hasRecord = record.contains(savedKey);
+        if (hasRecord || current == progId) {
+            if (hasRecord) {
+                const QString previous = record.value(savedKey).toString();
+                if (previous.isEmpty())
+                    type.remove(QStringLiteral("."));
+                else
+                    type.setValue(QStringLiteral("."), previous);
+            } else {
+                type.remove(QStringLiteral("."));
+            }
+            type.remove(QStringLiteral("OpenWithProgids/") + progId);
+            type.sync();
+            record.remove(savedKey);
+            QSettings(classesKey(progId), QSettings::NativeFormat).clear();
+        }
     }
     record.sync();
 }
@@ -656,16 +669,16 @@ void SetupEngine::revertInstallOptions()
     marker.sync();
 
     // 2) File associations: restore using the original values recorded at install time, then clear the records.
+    // Always call both: setAssociation also removes stale OrbbecSlicer.* mappings that were left
+    // behind without a recorded previous value, so an empty record must not skip the cleanup.
     const QString exe = m_env ? m_env->appExecutablePath(m_installDir) : QString();
     QSettings record(QStringLiteral("HKEY_CURRENT_USER\\Software\\Orbbec\\OrbbecSlicer\\Assoc"),
                      QSettings::NativeFormat);
-    if (!record.allKeys().isEmpty()) {
-        setAssociation(record, QStringLiteral(".3mf"), false, exe);
-        setAssociation(record, QStringLiteral(".stl"), false, exe);
-        record.remove(QString());
-        record.sync();
-        appendLog(QStringLiteral("Restored .3mf/.stl file associations"));
-    }
+    setAssociation(record, QStringLiteral(".3mf"), false, exe);
+    setAssociation(record, QStringLiteral(".stl"), false, exe);
+    record.remove(QString());
+    record.sync();
+    appendLog(QStringLiteral("Restored .3mf/.stl file associations"));
 }
 
 void SetupEngine::installUninstaller()
