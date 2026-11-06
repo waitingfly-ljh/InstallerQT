@@ -73,8 +73,13 @@ if (-not $QtRoot) {
 }
 $QtRoot = (Resolve-Path -LiteralPath $QtRoot).ProviderPath
 $QtBin = Join-Path $QtRoot 'bin'
-foreach ($f in @('Qt6Core.dll', 'Qt6Quick.dll', 'Qt6Qml.dll', 'windeployqt.exe', 'qmlimportscanner.exe')) {
-    if (-not (Test-Path -LiteralPath (Join-Path $QtBin $f))) { Fail "Incomplete Qt directory, missing bin\${f}: $QtRoot" }
+foreach ($f in @('Qt6Core.dll', 'Qt6Quick.dll', 'Qt6Qml.dll', 'windeployqt.exe', 'qmlimportscanner.exe', 'lrelease.exe')) {
+    if (-not (Test-Path -LiteralPath (Join-Path $QtBin $f))) {
+        if ($f -eq 'lrelease.exe') {
+            Fail "lrelease.exe not found in $QtBin. The Qt installation is missing LinguistTools; install the 'Qt 6.8.3 > Qt Debug Information Files / Qt Translator' component or the full msvc2022_64 package."
+        }
+        Fail "Incomplete Qt directory, missing bin\${f}: $QtRoot"
+    }
 }
 $qtVersion = $null
 $qmake = Join-Path $QtBin 'qmake.exe'
@@ -163,6 +168,39 @@ Write-Both ("Shell exe: {0:N0} B" -f (Get-Item (Join-Path $DistDir 'OrbbecSlicer
 $launcher = Join-Path $BuildDir 'OrbbecSlicerSetupLauncher.exe'
 if (-not (Test-Path -LiteralPath $launcher)) { Fail "Launcher not found: $launcher" }
 Write-Both ("Launcher exe: {0:N0} B ({1})" -f (Get-Item $launcher).Length, $launcher)
+
+# --- 3b. Verify the embedded translation resource -----------------------------------------
+# qt_add_translations runs lrelease and embeds the .qm into the executable at :/i18n/<name>.qm.
+# If the target is dropped from CMake the build would still succeed but the Chinese UI would silently
+# fall back to English, so assert both the lrelease output and the compiled-in resource.
+$tsFile = Join-Path $Here 'translations\OrbbecSlicerSetup_zh_CN.ts'
+if (-not (Test-Path -LiteralPath $tsFile)) { Fail "Translation source not found: $tsFile" }
+$qmBuilt = Join-Path $BuildDir 'OrbbecSlicerSetup_zh_CN.qm'
+if (-not (Test-Path -LiteralPath $qmBuilt)) {
+    Fail "lrelease produced no zh_CN .qm; check the qt_add_translations block in CMakeLists.txt (expected: $qmBuilt)"
+}
+$distExe = Join-Path $DistDir 'OrbbecSlicerSetup.exe'
+$exeText = [System.Text.Encoding]::Unicode.GetString([System.IO.File]::ReadAllBytes($distExe))
+if (-not $exeText.Contains('zh_CN')) {
+    Fail 'The shell executable does not contain the zh_CN translation resource; qt_add_translations is not wired into the target'
+}
+Write-Both ("Translation resource embedded: {0:N0} B (.qm {1})" -f (Get-Item $distExe).Length, $qmBuilt)
+
+# Untranslated count is a quality signal, not a hard failure: missing entries fall back to English.
+$lrelease = Join-Path $QtBin 'lrelease.exe'
+$qmProbe = Join-Path $env:TEMP ("orbbec-ts-check-" + [guid]::NewGuid().ToString('N') + '.qm')
+$lrOut = (& $lrelease $tsFile -qm $qmProbe 2>&1 | Out-String)
+Remove-Item -LiteralPath $qmProbe -Force -ErrorAction SilentlyContinue
+if ($lrOut -match '\((\d+) finished and (\d+) unfinished\)') {
+    $unfinished = [int]$Matches[2]
+    if ($unfinished -gt 0) {
+        Write-Both "Translation: $unfinished unfinished entries in zh_CN.ts (they fall back to English)" 'WARN'
+    } else {
+        Write-Both 'Translation: zh_CN.ts fully translated (0 unfinished)'
+    }
+} else {
+    Write-Both "Translation: could not parse lrelease output: $($lrOut.Trim())" 'WARN'
+}
 
 # --- 4. Deploy Qt runtime (including QML modules) --------------------------------------
 # Before deploying, use qmlimportscanner to compute the required modules from the real imports in the source,

@@ -699,7 +699,43 @@ if ($setupPath -and -not $SkipInstallVerify) {
     } else { 'residual' }
     Add-Step 'Silent uninstall from the uninstall entry' $setupUninstallOk ("exit=$uninstallExit; install directory $dirDetail; registration $(if ($entryGone) { 'deleted' } else { 'residual' }); uninstaller $(if ($uninstGone) { 'deleted' } else { 'residual' }); Start Menu $(if ($lnkGone) { 'deleted' } else { 'residual' }); desktop shortcut $(if ($desktopGone) { 'deleted' } else { 'residual' }); .3mf association $(if ($assocReverted) { 'reverted' } else { 'still OrbbecSlicer.3mf' }); ProgId $(if ($progGone) { 'deleted' } else { 'residual' }); remaining entries $entryCountAfter") $sw.Elapsed.TotalSeconds
 
-    $setupInstallOk = $setupInstallComplete -and ($setupDiffCount -eq 0) -and $uninstallerEntryOk -and $setupUninstallOk
+    # 9d. Chinese language variant: the shell accepts --lang on both the installer and the branded
+    # uninstaller. Run the same silent install/uninstall once in Chinese to prove the language option
+    # does not break the loop and that cleanup behaves identically.
+    Write-Both '== 9d. Chinese language loop (--lang zh_CN) ==' 'STEP'
+    $zhDir = Join-Path $OutDir 'install-setup-zh'
+    if (Test-Path -LiteralPath $zhDir) { Remove-Item -LiteralPath $zhDir -Recurse -Force -ErrorAction SilentlyContinue }
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $r = Invoke-Native -FilePath $setupPath -ArgumentList @(
+        '--log', $setupShellLog, '--lang', 'zh_CN', '--silent', 'in', '-t', $zhDir
+    ) -LogPath $LogPath
+    $sw.Stop()
+    $zhInstalled = ($r.ExitCode -eq 0) -and (Test-Path -LiteralPath (Join-Path $zhDir 'maintenancetool.exe'))
+    Add-Step 'Chinese silent install' $zhInstalled "exit=$($r.ExitCode)" $sw.Elapsed.TotalSeconds
+    $zhUninstallOk = $false
+    if ($zhInstalled) {
+        $entryZh = Find-OrbbecUninstallEntry $zhDir
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        if ($entryZh -and (Test-Path -LiteralPath $entryZh.DisplayIcon)) {
+            $r2 = Invoke-Native -FilePath $entryZh.DisplayIcon -ArgumentList @(
+                '--uninstall', '--install-dir', $zhDir, '--silent', '--lang', 'zh_CN'
+            ) -LogPath $LogPath
+            $deadlineZh = (Get-Date).AddSeconds(20)
+            while ((Get-Date) -lt $deadlineZh -and (Test-Path -LiteralPath $zhDir)) { Start-Sleep -Milliseconds 500 }
+            $zhGone = -not (Test-Path -LiteralPath $zhDir)
+            $zhUninstallOk = ($r2.ExitCode -eq 0) -and $zhGone
+            $zhDetail = "exit=$($r2.ExitCode); install directory $(if ($zhGone) { 'deleted' } else { 'residual' })"
+        } else {
+            $zhDetail = 'no uninstall entry pointing to the branded uninstaller'
+        }
+        $sw.Stop()
+        Add-Step 'Chinese silent uninstall' $zhUninstallOk $zhDetail $sw.Elapsed.TotalSeconds
+    } else {
+        $zhDetail = 'skipped (install failed)'
+        Add-Step 'Chinese silent uninstall' $false $zhDetail
+    }
+
+    $setupInstallOk = $setupInstallComplete -and ($setupDiffCount -eq 0) -and $uninstallerEntryOk -and $setupUninstallOk -and $zhInstalled -and $zhUninstallOk
     if (-not $setupInstallOk) {
         # On failure discard Setup.exe and the checksum file so they are not published by mistake.
         Remove-Item -LiteralPath $setupPath, "$setupPath.sha256" -Force -ErrorAction SilentlyContinue

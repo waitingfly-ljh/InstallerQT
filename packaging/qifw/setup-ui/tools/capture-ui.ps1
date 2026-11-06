@@ -17,6 +17,9 @@
 #>
 param(
     [string]$Models = 'options|maintenance|progress|complete|failure|uninstall-scope|uninstall-confirm|uninstall-done|option-shortcutDesktop|option-assoc3mf|option-assocStl|option-launchAfterInstall',
+    # UI language for the captures (e.g. zh_CN). Empty keeps the default (English / system locale).
+    # Captures are written as <view>-<shortlang>.png so they can be compared side by side with the English set.
+    [string]$Lang = '',
     [switch]$SkipBuild
 )
 
@@ -141,10 +144,19 @@ $env:PATH = "$BuildDir;$QtBin;$env:PATH"
 $env:ORBBEC_SETUP_SHOT_DIR = $ShotDir.TrimEnd('\')
 
 $names = @($Models.Split('|') | ForEach-Object { $_.Trim() } | Where-Object { $_.Length -gt 0 })
+# Language-specific captures: append --lang; the shell still writes <view>.png (the file name comes from
+# --view, not from the language), so rename to <view>-<shortlang>.png afterwards.
+$langArgs = if ($Lang) { @('--lang', $Lang) } else { @() }
+$langSuffix = if ($Lang) { '-' + $Lang.Split('_')[0] } else { '' }
 $failed = New-Object System.Collections.Generic.List[string]
 foreach ($v in $Views) {
     if ($names -notcontains $v) { continue }
-    try { Invoke-Shot @('--selftest', '--qml-smoke', '--view', $v) (Join-Path $ShotDir "$v.png") }
+    try {
+        Invoke-Shot (@('--selftest', '--qml-smoke', '--view', $v) + $langArgs) (Join-Path $ShotDir "$v.png")
+        if ($langSuffix) {
+            Move-Item -LiteralPath (Join-Path $ShotDir "$v.png") -Destination (Join-Path $ShotDir "$v$langSuffix.png") -Force
+        }
+    }
     catch { Write-Step "Failed: $($_.Exception.Message)"; $failed.Add($v) }
 }
 
@@ -155,12 +167,17 @@ foreach ($k in $OptionKeys) {
     $name = "option-$k"
     if ($names -notcontains $name) { continue }
     try {
-        Invoke-Shot @('--selftest', '--qml-smoke', '--view', 'options', '--option', $k) (Join-Path $ShotDir 'options.png')
-        Move-Item -LiteralPath (Join-Path $ShotDir 'options.png') -Destination (Join-Path $ShotDir "$name.png") -Force
+        Invoke-Shot (@('--selftest', '--qml-smoke', '--view', 'options', '--option', $k) + $langArgs) (Join-Path $ShotDir 'options.png')
+        Move-Item -LiteralPath (Join-Path $ShotDir 'options.png') -Destination (Join-Path $ShotDir "$name$langSuffix.png") -Force
     } catch { Write-Step "Failed: $($_.Exception.Message)"; $failed.Add($name) }
 }
 if ($names -contains 'options') {
-    try { Invoke-Shot @('--selftest', '--qml-smoke', '--view', 'options') (Join-Path $ShotDir 'options.png') }
+    try {
+        Invoke-Shot (@('--selftest', '--qml-smoke', '--view', 'options') + $langArgs) (Join-Path $ShotDir 'options.png')
+        if ($langSuffix) {
+            Move-Item -LiteralPath (Join-Path $ShotDir 'options.png') -Destination (Join-Path $ShotDir "options$langSuffix.png") -Force
+        }
+    }
     catch { Write-Step "Failed: $($_.Exception.Message)"; $failed.Add('options') }
 }
 

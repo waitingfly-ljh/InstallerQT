@@ -246,7 +246,36 @@ else {
     }
 }
 
-# --- 6. Summary -----------------------------------------------------------
+# --- 6. Language pass: same silent install/uninstall with --lang zh_CN ----
+# QIFW has no zh_CN translation of its own, so the native pages fall back to English, but the
+# --lang option must be accepted and the headless install/uninstall must still complete and clean up.
+# This guards against a future change that rejects unknown languages or breaks the loop when a
+# language is supplied.
+Write-Both '== 6. Language pass (--lang zh_CN) ==' 'STEP'
+$langDir = Join-Path $OutDir 'install-zh'
+if (Test-Path -LiteralPath $langDir) { Remove-Item -LiteralPath $langDir -Recurse -Force }
+New-Item -ItemType Directory -Force -Path $langDir | Out-Null
+$sw = [System.Diagnostics.Stopwatch]::StartNew()
+$r = Invoke-Native -FilePath $InstallerPath -ArgumentList @(
+    '--platform', 'minimal', '--lang', 'zh_CN', 'in', '-c', '--confirm-command', '--accept-licenses', '--accept-messages',
+    '--cp', $CacheDir, '-t', $langDir
+) -LogPath $LogPath
+$sw.Stop()
+$langInstallOk = $r.ExitCode -eq 0
+Add-Step 'Language install (zh_CN)' $langInstallOk "exit=$($r.ExitCode)" $sw.Elapsed.TotalSeconds
+if ($langInstallOk) {
+    $mtLang = Join-Path $langDir 'maintenancetool.exe'
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $r2 = Invoke-Native -FilePath $mtLang -ArgumentList @(
+        '--platform', 'minimal', '--lang', 'zh_CN', 'pr', '-c', '--confirm-command', '--accept-licenses', '--accept-messages',
+        '--cp', $CacheDir
+    ) -LogPath $LogPath
+    $sw.Stop()
+    $langGone = -not (Test-Path -LiteralPath $langDir)
+    Add-Step 'Language uninstall (zh_CN)' ($r2.ExitCode -eq 0 -and $langGone) "exit=$($r2.ExitCode) dirGone=$langGone" $sw.Elapsed.TotalSeconds
+}
+
+# --- 7. Summary -----------------------------------------------------------
 $result = [ordered]@{
     timestamp        = (Get-Date).ToString('o')
     repoRoot         = $RepoRoot

@@ -54,13 +54,13 @@ ApplicationWindow {
 
     // Token table and base widgets
     UiTheme { id: theme }
-    UiBtn { text: "OK"; primary: true }
-    UiBtn { text: "Delete"; danger: true }
-    UiBtn { text: "Disabled"; enabledState: false }
+    UiBtn { text: qsTr("OK"); primary: true }
+    UiBtn { text: qsTr("Delete"); danger: true }
+    UiBtn { text: qsTr("Disabled"); enabledState: false }
     BrandMark { base: theme.brand; accent: theme.brandSoft }
     StepList {
-        steps: [{ "label": "One", "state": "done" }, { "label": "Two", "state": "active" },
-                { "label": "Three", "state": "pending" }]
+        steps: [{ "label": qsTr("One"), "state": "done" }, { "label": qsTr("Two"), "state": "active" },
+                { "label": qsTr("Three"), "state": "pending" }]
     }
 
     // Same as App.qml: the controller uses a property rather than an id; Main's required property wants an object property.

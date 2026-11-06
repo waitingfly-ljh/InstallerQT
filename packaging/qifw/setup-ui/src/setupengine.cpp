@@ -121,7 +121,7 @@ SetupEngine::SetupEngine(Environment *env, QObject *parent) : QObject(parent), m
         // When no concrete percentage is available, advance slowly by phase weight, but never reach 99% before the engine finishes.
         if (!m_busy || m_progress >= 99)
             return;
-        if (m_phase == QStringLiteral("Writing program files"))
+        if (m_phase == tr("Writing program files"))
             setProgress(m_progress + 1);
         else if (m_progress < 5)
             setProgress(std::min(m_progress + 1, 5));
@@ -178,14 +178,14 @@ void SetupEngine::appendLog(const QString &line)
 void SetupEngine::startProcess(const QString &program, const QStringList &args, const QString &phase)
 {
     if (m_busy) {
-        emit finished(3, QStringLiteral("A task is already in progress"));
+        emit finished(3, tr("A task is already in progress"));
         return;
     }
     if (!QFileInfo::exists(program)) {
-        const QString msg = QStringLiteral("Cannot find install engine: %1").arg(QDir::toNativeSeparators(program));
-        appendLog(msg);
+        // Log stays English for support/diagnostics; the UI summary is translated.
+        appendLog(QStringLiteral("Cannot find install engine: %1").arg(QDir::toNativeSeparators(program)));
         restoreBackup();
-        emit finished(2, msg);
+        emit finished(2, tr("Cannot find install engine: %1").arg(QDir::toNativeSeparators(program)));
         return;
     }
 
@@ -195,7 +195,7 @@ void SetupEngine::startProcess(const QString &program, const QStringList &args, 
     setProgress(0);
     m_phase = phase;
     emit phaseChanged();
-    m_detail = QStringLiteral("Preparing components");
+    m_detail = tr("Preparing components");
     emit detailChanged();
     emit busyChanged();
 
@@ -220,7 +220,7 @@ void SetupEngine::startProcess(const QString &program, const QStringList &args, 
         m_busy = false;
         emit busyChanged();
         restoreBackup();
-        emit finished(2, msg);
+        emit finished(2, tr("Engine failed to start: %1").arg(m_proc ? m_proc->errorString() : QString()));
     });
     m_proc->start(program, args);
     m_ticker->start();
@@ -292,9 +292,8 @@ void SetupEngine::cleanupAfterCancel()
 void SetupEngine::startInstall(const QString &targetDir, const QVariantMap &options)
 {
     if (m_payloadPath.isEmpty() || !QFileInfo::exists(m_payloadPath)) {
-        const QString msg = QStringLiteral("Installer payload does not exist: %1").arg(QDir::toNativeSeparators(m_payloadPath));
-        appendLog(msg);
-        emit finished(2, msg);
+        appendLog(QStringLiteral("Installer payload does not exist: %1").arg(QDir::toNativeSeparators(m_payloadPath)));
+        emit finished(2, tr("Installer payload does not exist: %1").arg(QDir::toNativeSeparators(m_payloadPath)));
         return;
     }
     m_uninstallMode = false;
@@ -305,9 +304,8 @@ void SetupEngine::startInstall(const QString &targetDir, const QVariantMap &opti
     QDir().mkpath(m_cacheDir);
 
     if (!beginReplaceExisting()) {
-        const QString msg = QStringLiteral("Cannot prepare maintenance install directory: %1").arg(m_installDir);
-        appendLog(msg);
-        emit finished(4, msg);
+        appendLog(QStringLiteral("Cannot prepare maintenance install directory: %1").arg(m_installDir));
+        emit finished(4, tr("Cannot prepare maintenance install directory: %1").arg(m_installDir));
         return;
     }
     QStringList args = qifwInstallArgs(m_installDir, m_cacheDir);
@@ -320,7 +318,7 @@ void SetupEngine::startInstall(const QString &targetDir, const QVariantMap &opti
     appendLog(QStringLiteral("Install options: shortcut=%1 .3mf=%2 .stl=%3 launch after install=%4")
                   .arg(m_shortcutDesktop).arg(m_assoc3mf).arg(m_assocStl)
                   .arg(m_launchAfterInstall));
-    startProcess(m_payloadPath, args, QStringLiteral("Verifying installer payload"));
+    startProcess(m_payloadPath, args, tr("Verifying installer payload"));
 }
 
 void SetupEngine::startUninstall(const QString &installDir, bool removeAllData, bool keepDataDir)
@@ -342,7 +340,7 @@ void SetupEngine::startUninstall(const QString &installDir, bool removeAllData, 
         // If the directory is empty, delete it too; if it still has user files, keep it.
         if (QFileInfo::exists(m_installDir))
             QDir().rmdir(m_installDir);
-        emit finished(0, QStringLiteral("Program files no longer exist, uninstall registration and user data cleaned"));
+        emit finished(0, tr("Program files no longer exist, uninstall registration and user data cleaned"));
         return;
     }
     m_shortcutDesktop = false;
@@ -358,7 +356,7 @@ void SetupEngine::startUninstall(const QString &installDir, bool removeAllData, 
                      QStringLiteral("--accept-messages"),
                      QStringLiteral("--cp"), m_cacheDir,
                  },
-                 QStringLiteral("Removing program files"));
+                 tr("Removing program files"));
 }
 
 void SetupEngine::cancel()
@@ -366,7 +364,7 @@ void SetupEngine::cancel()
     if (!m_busy || !m_proc)
         return;
     m_cancelRequested = true;
-    m_detail = QStringLiteral("Cancelling…");
+    m_detail = tr("Cancelling…");
     emit detailChanged();
     appendLog(QStringLiteral("User requested cancel"));
     m_proc->terminate();
@@ -403,10 +401,10 @@ void SetupEngine::advancePhaseFromLine(const QString &line)
     if (!m_uninstallMode) {
         if (line.contains(QStringLiteral("extract"), Qt::CaseInsensitive)
             || line.contains(QStringLiteral("Extracting"), Qt::CaseInsensitive)) {
-            next = QStringLiteral("Writing program files");
+            next = tr("Writing program files");
         } else if (line.contains(QStringLiteral("branding"), Qt::CaseInsensitive)
                    || line.contains(QStringLiteral("shortcut"), Qt::CaseInsensitive)) {
-            next = QStringLiteral("Finishing configuration");
+            next = tr("Finishing configuration");
         }
     }
     if (next != m_phase) {
@@ -414,7 +412,7 @@ void SetupEngine::advancePhaseFromLine(const QString &line)
         emit phaseChanged();
         appendLog(QStringLiteral("Phase: %1").arg(m_phase));
         if (!m_uninstallMode) {
-            setProgress(m_phase == QStringLiteral("Writing program files") ? 8 : m_progress);
+            setProgress(m_phase == tr("Writing program files") ? 8 : m_progress);
         }
     }
     m_detail = line.left(120);
@@ -457,7 +455,7 @@ void SetupEngine::onFinished(int exitCode, QProcess::ExitStatus status)
     if (crashed || exitCode != 0) {
         restoreBackup();
         emit finished(crashed ? -1 : exitCode,
-                      QStringLiteral("Install engine exited with %1").arg(crashed ? QStringLiteral("abnormal status") : QString::number(exitCode)));
+                      tr("Install engine exited with %1").arg(crashed ? tr("abnormal status") : QString::number(exitCode)));
         return;
     }
 
@@ -468,7 +466,7 @@ void SetupEngine::onFinished(int exitCode, QProcess::ExitStatus status)
         QString residual;
         if (!cleanupInstallDirAfterUninstall(residual)) {
             setProgress(100);
-            emit finished(5, QStringLiteral("Program files deleted, but install directory still has residue: %1").arg(residual));
+            emit finished(5, tr("Program files deleted, but install directory still has residue: %1").arg(residual));
             return;
         }
     } else {
@@ -478,7 +476,7 @@ void SetupEngine::onFinished(int exitCode, QProcess::ExitStatus status)
         installUninstaller();
     }
     setProgress(100);
-    emit finished(0, m_uninstallMode ? QStringLiteral("Uninstall complete") : QStringLiteral("Install complete"));
+    emit finished(0, m_uninstallMode ? tr("Uninstall complete") : tr("Install complete"));
 }
 
 void SetupEngine::applyInstallOptions()

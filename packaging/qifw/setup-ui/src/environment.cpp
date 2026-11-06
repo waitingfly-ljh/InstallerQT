@@ -56,7 +56,7 @@ QString Environment::defaultInstallDir() const
 QString Environment::probeDirectory(const QString &path) const
 {
     if (path.trimmed().isEmpty())
-        return QStringLiteral("Please specify an install location");
+        return tr("Please specify an install location");
 
     const QFileInfo info(path);
     QString dir = info.absoluteFilePath();
@@ -85,9 +85,9 @@ QString Environment::probeDirectory(const QString &path) const
     };
 
     if (!ancestor.isDir())
-        return remember(QStringLiteral("%1 is not a directory").arg(QDir::toNativeSeparators(dir)));
+        return remember(tr("%1 is not a directory").arg(QDir::toNativeSeparators(dir)));
     if (QFileInfo(path).exists() && !QFileInfo(path).isDir())
-        return remember(QStringLiteral("%1 already exists and is not a directory").arg(QDir::toNativeSeparators(path)));
+        return remember(tr("%1 already exists and is not a directory").arg(QDir::toNativeSeparators(path)));
 
     // Probe write permission in the directory that will actually be written: if the target
     // already exists, test the target itself (this also catches write restrictions inside
@@ -101,10 +101,10 @@ QString Environment::probeDirectory(const QString &path) const
     const MSOpen::Access access = MSOpen::effectiveAccess(target);
     switch (access) {
     case MSOpen::Access::ReadOnly:
-        return remember(QStringLiteral("%1 is not writable; choose another location or run the installer as administrator")
+        return remember(tr("%1 is not writable; choose another location or run the installer as administrator")
                             .arg(QDir::toNativeSeparators(info.absoluteFilePath())));
     case MSOpen::Access::Missing:
-        return remember(QStringLiteral("%1 is unavailable").arg(QDir::toNativeSeparators(info.absoluteFilePath())));
+        return remember(tr("%1 is unavailable").arg(QDir::toNativeSeparators(info.absoluteFilePath())));
     case MSOpen::Access::Writable:
     case MSOpen::Access::Unknown:
         break;
@@ -116,7 +116,7 @@ QString Environment::probeDirectory(const QString &path) const
             QStringLiteral(".orbbec-write-probe-%1").arg(QCoreApplication::applicationPid()));
         QFile f(probe);
         if (!f.open(QIODevice::WriteOnly))
-            return remember(QStringLiteral("%1 is not writable; choose another location or run the installer as administrator")
+            return remember(tr("%1 is not writable; choose another location or run the installer as administrator")
                                 .arg(QDir::toNativeSeparators(info.absoluteFilePath())));
         f.close();
         QFile::remove(probe);

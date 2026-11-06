@@ -104,7 +104,10 @@ QtObject {
     readonly property int contentPaddingV: 40
 
     // Fonts and font sizes
-    readonly property string fontFamily: "Microsoft YaHei"
+    // English uses a Western font; Chinese needs a font with CJK glyphs. The language is the
+    // appLanguage context property injected by main.cpp; when it is absent (isolated tests) fall back to English.
+    readonly property string fontFamily: (typeof appLanguage !== "undefined" && appLanguage === "zh_CN")
+                                         ? "Microsoft YaHei" : "Segoe UI"
     readonly property int fontBody: 13
     readonly property int fontLead: 14
     readonly property int fontTitle: 23

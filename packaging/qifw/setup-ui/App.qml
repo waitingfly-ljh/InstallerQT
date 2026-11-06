@@ -121,17 +121,17 @@ Item {
                     onRiskToggled: (c) => {}
                 }
                 // The progress level is hardcoded in the screenshot component: Host.engine is not running in screenshot mode, so reading it always yields 0%.
-                ProgressPage { id: progressPage; heading: "Installing OrbbecSlicer"; lead: "Please keep this window open. The installation does not upload local projects or user presets."; phase: "Preparing components"; progress: 62; detail: "Verifying package integrity..." }
-                CompletePage { id: completePage; title: "Complete"; description: "Ready"; primaryText: "Launch now"; secondaryText: "View files"; showSecondary: true }
-                FailurePage { id: failurePage; errorCode: "1205"; errorText: "Insufficient permission while writing files" }
+                ProgressPage { id: progressPage; heading: qsTr("Installing OrbbecSlicer"); lead: qsTr("Please keep this window open. The installation does not upload local projects or user presets."); phase: qsTr("Preparing components"); progress: 62; detail: qsTr("Verifying package integrity...") }
+                CompletePage { id: completePage; title: qsTr("Complete"); description: qsTr("Ready"); primaryText: qsTr("Launch now"); secondaryText: qsTr("View files"); showSecondary: true }
+                FailurePage { id: failurePage; errorCode: "1205"; errorText: qsTr("Insufficient permission while writing files") }
                 DataScopePage { id: dataScopePage; removeAllData: false }
                 UninstallConfirmPage { id: confirmPage; removeAllData: false; keepDataDir: true; installDir: "C:\\OrbbecSlicer" }
                 CompletePage {
                     id: uninstalledPage
-                    title: "Uninstall complete"
-                    description: "Program files have been removed; personal presets and preferences were retained."
-                    primaryText: "Finish"
-                    secondaryText: "View files"
+                    title: qsTr("Uninstall complete")
+                    description: qsTr("Program files have been removed; personal presets and preferences were retained.")
+                    primaryText: qsTr("Finish")
+                    secondaryText: qsTr("View files")
                     showSecondary: true
                 }
             }

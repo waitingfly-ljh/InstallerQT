@@ -13,8 +13,10 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QJSValue>
+#include <QLocale>
 #include <QQuickWindow>
 #include <QStandardPaths>
+#include <QTranslator>
 #include <QWindow>
 #include <QTimer>
 #include <QDebug>
@@ -71,6 +73,8 @@ struct LaunchPlan {
     // Test hook: silent install uses the install options page defaults (shortcut/.3mf/launch after install),
     // so the packaging loop can verify "install options are restored on uninstall".
     bool withOptions = false;
+    // --lang <code>: explicit UI language; empty means "follow the system locale, then English".
+    QString lang;
 };
 
 LaunchPlan parseArgs(QGuiApplication &app)
@@ -89,8 +93,19 @@ LaunchPlan parseArgs(QGuiApplication &app)
             afterSeparator = true;
             continue;
         }
-        if (afterSeparator)
+        if (afterSeparator) {
+            // --lang is a shell option, not an engine option: consume it wherever it appears so
+            // "--silent in -t <dir> --lang zh_CN" does not leak it into the QIFW command line.
+            if (a == QStringLiteral("--lang") && i + 1 < args.size()) {
+                plan.lang = args.at(++i);
+                continue;
+            }
+            if (a.startsWith(QStringLiteral("--lang="))) {
+                plan.lang = a.mid(7);
+                continue;
+            }
             passthrough << a;
+        }
         else
             own << a;
     }
@@ -131,6 +146,10 @@ LaunchPlan parseArgs(QGuiApplication &app)
             plan.checkRunMode = true;
         } else if (a == QStringLiteral("--with-options")) {
             plan.withOptions = true;
+        } else if (a == QStringLiteral("--lang") && i + 1 < own.size()) {
+            plan.lang = own.at(++i);
+        } else if (a.startsWith(QStringLiteral("--lang="))) {
+            plan.lang = a.mid(7);
         } else if (a == QStringLiteral("--view") && i + 1 < own.size()) {
             plan.smokeView = own.at(++i);
         } else if (a == QStringLiteral("--dir") && i + 1 < own.size()) {
@@ -152,6 +171,54 @@ LaunchPlan parseArgs(QGuiApplication &app)
     if (t >= 0 && t + 1 < passthrough.size())
         plan.targetDir = passthrough.at(t + 1);
     return plan;
+}
+
+// UI language: explicit --lang wins, then the system locale (zh* -> zh_CN), then English.
+struct LanguageChoice {
+    QString code;    // "en" or "zh_CN" (or an unsupported code, which falls back later)
+    QString source;  // human-readable origin, logged so support can see why a language was picked
+};
+
+LanguageChoice resolveLanguage(const LaunchPlan &plan)
+{
+    LanguageChoice c;
+    if (!plan.lang.isEmpty()) {
+        QString code = plan.lang.trimmed();
+        if (code.startsWith(QLatin1String("zh"), Qt::CaseInsensitive))
+            code = QStringLiteral("zh_CN");
+        else if (code.startsWith(QLatin1String("en"), Qt::CaseInsensitive))
+            code = QStringLiteral("en");
+        c.code = code;
+        c.source = QStringLiteral("command line");
+        return c;
+    }
+    const QString sys = QLocale::system().name();
+    if (sys.startsWith(QLatin1String("zh"), Qt::CaseInsensitive)) {
+        c.code = QStringLiteral("zh_CN");
+        c.source = QStringLiteral("system locale");
+    } else {
+        c.code = QStringLiteral("en");
+        c.source = QStringLiteral("default");
+    }
+    return c;
+}
+
+// Installs the translator for `lang` and returns the language actually in effect. A missing or
+// unloadable .qm falls back to English with a warning: a broken translation must never block startup.
+QString installUiTranslator(QGuiApplication &app, const QString &lang)
+{
+    if (lang == QLatin1String("en"))
+        return lang;
+    auto *translator = new QTranslator(&app);
+    const QString path = QStringLiteral(":/i18n/OrbbecSlicerSetup_%1.qm").arg(lang);
+    if (translator->load(path) && app.installTranslator(translator)) {
+        qInfo().noquote() << QStringLiteral("UI language: %1 (translation loaded from %2)").arg(lang, path);
+        return lang;
+    }
+    delete translator;
+    qWarning().noquote() << QStringLiteral("UI language: %1 has no translation (%2); falling back to English")
+                                .arg(lang, path);
+    return QStringLiteral("en");
 }
 
 // Screenshot mode (only with -DORBBEC_SETUP_SHOT): place the controller at a given view.
@@ -411,6 +478,23 @@ int main(int argc, char *argv[])
     });
 
 
+    // Resolve and install the UI language before the QML engine exists: QML evaluates qsTr() while
+    // loading the root component, so a translator installed later would leave the first screen in English.
+    const LanguageChoice language = resolveLanguage(plan);
+    const QString uiLanguage = installUiTranslator(app, language.code);
+    qInfo().noquote() << QStringLiteral("UI language resolved: %1 (source: %2)").arg(uiLanguage, language.source);
+
+    // --selftest --lang zh_CN: prove the translation actually took effect, otherwise a missing or
+    // stale .qm would silently leave the Chinese UI in English while every other assertion still passes.
+    if (plan.mode == StartMode::SelfTest && uiLanguage == QLatin1String("zh_CN")) {
+        const QString probe = QCoreApplication::translate("AppFrame", "OrbbecSlicer Setup Wizard");
+        const bool translated = probe != QLatin1String("OrbbecSlicer Setup Wizard");
+        qInfo().noquote() << QStringLiteral("SELFTEST language: zh_CN probe=[%1] translated=%2")
+                                 .arg(probe, translated ? QStringLiteral("true") : QStringLiteral("false"));
+        if (!translated)
+            return 2;
+    }
+
     Environment env;
     SetupHost host(&env);
     if (!plan.logPath.isEmpty())
@@ -519,6 +603,8 @@ int main(int argc, char *argv[])
     qml.rootContext()->setContextProperty(QStringLiteral("smokeDir"), plan.smokeDir);
     qml.rootContext()->setContextProperty(QStringLiteral("uninstallMode"), plan.uninstall);
     qml.rootContext()->setContextProperty(QStringLiteral("installDirPath"), plan.installDirOverride);
+    // Effective UI language ("en" / "zh_CN"): UiTheme picks its font family from it.
+    qml.rootContext()->setContextProperty(QStringLiteral("appLanguage"), uiLanguage);
     qml.rootContext()->setContextProperty(QStringLiteral("Host"), &host);
     qml.rootContext()->setContextProperty(QStringLiteral("SetupEngine"), host.engine());
 

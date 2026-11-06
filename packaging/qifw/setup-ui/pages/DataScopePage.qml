@@ -25,18 +25,18 @@ Item {
 
     readonly property var dataRows: removeAllData
         ? [
-            { "name": qsTr("Custom presets, calibration results"), "action": qsTr("Delete") },
-            { "name": qsTr("Software preferences, regional settings"), "action": qsTr("Delete") },
-            { "name": qsTr("Caches and logs"), "action": qsTr("Delete") },
-            { "name": qsTr("Login tokens, cloud service credentials"), "action": qsTr("Delete") },
-            { "name": qsTr("Project files outside the install directory"), "action": qsTr("Keep") }
+            { "name": qsTr("Custom presets, calibration results"), "action": qsTr("Delete"), "isDelete": true },
+            { "name": qsTr("Software preferences, regional settings"), "action": qsTr("Delete"), "isDelete": true },
+            { "name": qsTr("Caches and logs"), "action": qsTr("Delete"), "isDelete": true },
+            { "name": qsTr("Login tokens, cloud service credentials"), "action": qsTr("Delete"), "isDelete": true },
+            { "name": qsTr("Project files outside the install directory"), "action": qsTr("Keep"), "isDelete": false }
         ]
         : [
-            { "name": qsTr("Custom presets, calibration results"), "action": qsTr("Keep") },
-            { "name": qsTr("Software preferences, regional settings"), "action": qsTr("Keep") },
-            { "name": qsTr("Caches and logs"), "action": qsTr("Delete") },
-            { "name": qsTr("Login tokens, cloud service credentials"), "action": qsTr("Delete") },
-            { "name": qsTr("Project files outside the install directory"), "action": qsTr("Keep") }
+            { "name": qsTr("Custom presets, calibration results"), "action": qsTr("Keep"), "isDelete": false },
+            { "name": qsTr("Software preferences, regional settings"), "action": qsTr("Keep"), "isDelete": false },
+            { "name": qsTr("Caches and logs"), "action": qsTr("Delete"), "isDelete": true },
+            { "name": qsTr("Login tokens, cloud service credentials"), "action": qsTr("Delete"), "isDelete": true },
+            { "name": qsTr("Project files outside the install directory"), "action": qsTr("Keep"), "isDelete": false }
         ]
 
     ColumnLayout {
@@ -212,7 +212,7 @@ Item {
                             anchors.verticalCenter: parent.verticalCenter
                             text: rowItem.modelData.action
                             font.family: theme.fontFamily; font.pixelSize: theme.fontSmall
-                            color: rowItem.modelData.action === qsTr("Delete") ? theme.danger : theme.muted
+                            color: rowItem.modelData.isDelete ? theme.danger : theme.muted
                         }
                     }
                 }

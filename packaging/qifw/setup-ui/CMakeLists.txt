@@ -12,7 +12,8 @@ option(ORBBEC_SETUP_SHOT "Build the screenshot harness (QmlShot singleton)" OFF)
 
 # Depends only on Qt's Core / Gui / Quick / Qml: does not link QuickControls2,
 # controls are imported in QML from QtQuick.Controls.Basic (windeployqt handles deploying the runtime modules).
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Quick Qml)
+# LinguistTools provides lupdate/lrelease so the shell can ship an embedded zh_CN translation.
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Quick Qml LinguistTools)
 qt_standard_project_setup()
 
 qt_add_executable(OrbbecSlicerSetup
@@ -78,6 +79,45 @@ qt_add_qml_module(OrbbecSlicerSetup
 )
 
 target_link_libraries(OrbbecSlicerSetup PRIVATE Qt6::Core Qt6::Gui Qt6::Quick Qt6::Qml)
+
+# Translations: English is the source language (every user-visible string is written in English
+# and wrapped in qsTr()/tr()); zh_CN is the optional second language.
+#
+# qt_add_translations runs lrelease at build time and embeds the resulting .qm into the target
+# resource at :/i18n/<ts-basename>.qm (default RESOURCE_PREFIX "/i18n"), so the translation travels
+# inside the executable and cannot be dropped by the dist/ packaging step. Run the
+# "update_translations" target after changing user-visible strings to refresh the .ts.
+qt_add_translations(OrbbecSlicerSetup
+    TS_FILES translations/OrbbecSlicerSetup_zh_CN.ts
+    SOURCES
+        src/setuphost.h
+        src/setuphost.cpp
+        src/setupengine.h
+        src/setupengine.cpp
+        src/environment.h
+        src/environment.cpp
+        src/msopen.h
+        src/msopen.cpp
+    QML_FILES
+        App.qml
+        Main.qml
+        UiBtn.qml
+        BrandMark.qml
+        SetupController.qml
+        UiTheme.qml
+        LoadEntry.qml
+        StepList.qml
+        QmlSmoke.qml
+        AppFrame.qml
+        SideGlow.qml
+        pages/OptionsPage.qml
+        pages/ProgressPage.qml
+        pages/CompletePage.qml
+        pages/MaintenancePage.qml
+        pages/FailurePage.qml
+        pages/DataScopePage.qml
+        pages/UninstallConfirmPage.qml
+)
 
 # Sidebar glow: the same formula from SideGlow.qml is pre-generated as a 228x300 PNG (AppFrame displays it stretched with Image).
 # The resource alias is fixed to /glow.png, referenced in QML as qrc:/glow.png.

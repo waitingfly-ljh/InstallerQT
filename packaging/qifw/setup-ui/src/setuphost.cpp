@@ -119,7 +119,7 @@ void SetupHost::locatePayload()
             if (parts.size() >= 3)
                 m_payloadVersion = parts.at(1);
         } else {
-            m_payloadError = QStringLiteral("The specified installer package does not exist: %1").arg(p);
+            m_payloadError = tr("The specified installer package does not exist: %1").arg(p);
         }
     }
     m_mode = QStringLiteral("development");
@@ -131,19 +131,19 @@ void SetupHost::releasePayloadFromSelf()
     const QString self = QCoreApplication::applicationFilePath();
     QFile f(self);
     if (!f.open(QIODevice::ReadOnly)) {
-        m_payloadError = QStringLiteral("Cannot read the installer itself: %1").arg(self);
+        m_payloadError = tr("Cannot read the installer itself: %1").arg(self);
         emit payloadPathChanged();
         return;
     }
     const qint64 size = f.size();
     if (!f.seek(size - kTrailerSize)) {
-        m_payloadError = QStringLiteral("The installer trailer data is incomplete");
+        m_payloadError = tr("The installer trailer data is incomplete");
         emit payloadPathChanged();
         return;
     }
     const QByteArray trailer = f.read(kTrailerSize);
     if (trailer.size() != kTrailerSize) {
-        m_payloadError = QStringLiteral("The installer trailer data is incomplete");
+        m_payloadError = tr("The installer trailer data is incomplete");
         emit payloadPathChanged();
         return;
     }
@@ -163,14 +163,14 @@ void SetupHost::releasePayloadFromSelf()
     if (!QFileInfo::exists(out) || QFileInfo(out).size() != payloadLength) {
         QFile src(self);
         if (!src.open(QIODevice::ReadOnly)) {
-            m_payloadError = QStringLiteral("Cannot read payload data");
+            m_payloadError = tr("Cannot read payload data");
             emit payloadPathChanged();
             return;
         }
         src.seek(payloadOffset);
         QFile dst(out);
         if (!dst.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            m_payloadError = QStringLiteral("Cannot write the payload file: %1").arg(QDir::toNativeSeparators(out));
+            m_payloadError = tr("Cannot write the payload file: %1").arg(QDir::toNativeSeparators(out));
             emit payloadPathChanged();
             return;
         }
@@ -186,7 +186,7 @@ void SetupHost::releasePayloadFromSelf()
         }
         dst.close();
         if (remaining != 0 || h.result() != expectHash) {
-            m_payloadError = QStringLiteral("Installer package payload verification failed (possibly corrupted)");
+            m_payloadError = tr("Installer package payload verification failed (possibly corrupted)");
             QFile::remove(out);
             emit payloadPathChanged();
             return;
