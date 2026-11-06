@@ -7,7 +7,8 @@
   本文件只应被 dot-source 使用：
     . "$PSScriptRoot\_common.ps1"
   所有路径解析结果都会校验落在仓库根之内，越界即抛错中止，
-  以保证不写到 D:\Orbbec\install-qt 之外的任何位置。
+  以保证不写到本仓库之外的任何位置（仓库根由 .git 向上查找得到，仓库整体
+  放在 D:\Orbbec\orbbecslicer\packaging\qifw 或 <上游>\install-qt 下都成立）。
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -41,6 +42,10 @@ function Resolve-RepoPath {
     if ([System.IO.Path]::IsPathRooted($RelativePath)) {
         throw "路径必须是仓库内相对路径，拒绝绝对路径: $RelativePath"
     }
+
+    # manifest 与文档里的相对路径统一以 packaging/qifw/ 开头；若本仓库被放进
+    # <上游仓库>\packaging 下（qifw 直接位于仓库根），这里自动改写前缀。
+    $RelativePath = ConvertFrom-LegacyQifwPrefix -RelativePath $RelativePath -RepoRoot $RepoRoot
 
     $repoFull = [System.IO.Path]::GetFullPath($RepoRoot).TrimEnd('\')
     $candidate = [System.IO.Path]::GetFullPath((Join-Path $repoFull $RelativePath))
@@ -78,11 +83,94 @@ function Resolve-RepoPath {
     return $realFull
 }
 
+function ConvertFrom-LegacyQifwPrefix {
+    <#
+     适配"本仓库被整体放进上游仓库"的摆放：
+       D:\Orbbec\orbbecslicer\install-qt\packaging\qifw\...  ← 仓库根含 packaging\qifw（原样，不改写）
+       D:\Orbbec\orbbecslicer\packaging\                     ← 仓库根下直接是 qifw\（把 packaging/qifw/ 前缀改写为 qifw/）
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$RelativePath,
+        [Parameter(Mandatory)][string]$RepoRoot
+    )
+    $norm = $RelativePath -replace '\\', '/'
+    $legacy = 'packaging/qifw/'
+    if (-not $norm.StartsWith($legacy, [System.StringComparison]::OrdinalIgnoreCase)) { return $RelativePath }
+
+    $rootFull = [System.IO.Path]::GetFullPath($RepoRoot).TrimEnd('\')
+    if (Test-Path -LiteralPath (Join-Path $rootFull 'packaging\qifw')) { return $RelativePath }
+
+    $qifw = Get-QifwDir -RepoRoot $rootFull
+    if ($qifw.Relative -eq 'packaging/qifw') { return $RelativePath }
+    $rest = $norm.Substring($legacy.Length)
+    return if ($qifw.Relative) { '{0}/{1}' -f $qifw.Relative, $rest } else { $rest }
+}
+
+function Find-UpstreamRepo {
+    <#
+     从仓库根向上最多 4 层，找含 version.inc 的目录（上游 orbbecslicer 仓库）。
+     覆盖这些摆放（本仓库将来会被放进上游仓库里）：
+       <上游>\install-qt\packaging\qifw    （独立克隆整体搬到上游下）
+       <上游>\packaging\qifw               （只搬 packaging 目录）
+       <上游>\packaging                    （仓库根即 packaging）
+       <上游>                              （packaging 目录被拷进上游根，仓库根就是上游）
+     找不到时返回空字符串，由调用方决定兜底。
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$StartDir)
+
+    $probe = [System.IO.Path]::GetFullPath($StartDir).TrimEnd('\')
+    for ($i = 0; $i -lt 5 -and $probe; $i++) {
+        if (Test-Path -LiteralPath (Join-Path $probe 'version.inc')) { return $probe }
+        $parent = Split-Path -Parent $probe
+        if (-not $parent -or $parent -eq $probe) { break }
+        $probe = $parent
+    }
+    return ''
+}
+
+function Get-QifwDir {
+    <#
+     定位 qifw 工具目录（其下含 toolchain/ product/ setup-ui/ smoke/ out/）。
+     兼容两种摆放方式，避免把仓库挪位置后整条链路都找不到：
+       <仓库根>\packaging\qifw   独立克隆本仓库（install-qt）时的布局
+       <仓库根>\qifw            本仓库被放进 orbbecslicer\packaging 时的布局
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$RepoRoot)
+
+    $root = [System.IO.Path]::GetFullPath($RepoRoot).TrimEnd('\')
+    foreach ($rel in @('packaging\qifw', 'qifw')) {
+        $candidate = Join-Path $root $rel
+        if (Test-Path -LiteralPath (Join-Path $candidate 'toolchain\manifest.json')) {
+            return [pscustomobject]@{ Path = $candidate; Relative = ($rel -replace '\\', '/') }
+        }
+    }
+    # 仓库根本身就是 qifw 目录（只把 packaging\qifw 整个搬走并单独 init 仓库时）
+    if (Test-Path -LiteralPath (Join-Path $root 'toolchain\manifest.json')) {
+        return [pscustomobject]@{ Path = $root; Relative = '' }
+    }
+    throw "在 '$root' 下找不到 qifw 目录（期望 packaging\qifw、qifw，或仓库根本身含 toolchain\manifest.json）。"
+}
+
+function Resolve-QifwPath {
+    <# 把 qifw 内相对路径解析为仓库内绝对路径（自动适配两种布局，且仍受仓库根守卫）。 #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$RelativePath,
+        [Parameter(Mandatory)][string]$RepoRoot
+    )
+    $qifw = Get-QifwDir -RepoRoot $RepoRoot
+    $rel = if ($qifw.Relative) { '{0}/{1}' -f $qifw.Relative, $RelativePath.TrimStart('/') } else { $RelativePath.TrimStart('/') }
+    return Resolve-RepoPath -RelativePath $rel -RepoRoot $RepoRoot
+}
+
 function Get-ToolchainManifest {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$RepoRoot)
 
-    $manifestPath = Resolve-RepoPath -RelativePath 'packaging/qifw/toolchain/manifest.json' -RepoRoot $RepoRoot
+    $manifestPath = Resolve-QifwPath -RelativePath 'toolchain/manifest.json' -RepoRoot $RepoRoot
     if (-not (Test-Path -LiteralPath $manifestPath)) {
         throw "找不到 manifest: $manifestPath"
     }
@@ -204,7 +292,7 @@ function Get-QifwToolchainStatus {
         [Parameter(Mandatory)]$Manifest,
         [Parameter(Mandatory)][string]$RepoRoot
     )
-    $checkEnv = Resolve-RepoPath 'packaging/qifw/toolchain/check-env.ps1' -RepoRoot $RepoRoot
+    $checkEnv = Resolve-QifwPath 'toolchain/check-env.ps1' -RepoRoot $RepoRoot
     if (-not (Test-Path -LiteralPath $checkEnv)) { throw "找不到 $checkEnv" }
 
     $stdout = [System.IO.Path]::GetTempFileName()

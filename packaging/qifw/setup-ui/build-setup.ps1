@@ -66,10 +66,10 @@ Write-Both "外壳源码: $Here"
 
 # --- 1. 解析 Qt（优先参数，其次 manifest） ---------------------------------
 if (-not $QtRoot) {
-    $manifestPath = Join-Path $RepoRoot 'packaging\qifw\toolchain\manifest.json'
+    $manifestPath = Resolve-QifwPath 'toolchain/manifest.json' -RepoRoot $RepoRoot
     if (-not (Test-Path -LiteralPath $manifestPath)) { Fail "找不到工具链清单: $manifestPath" }
     $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    $QtRoot = Join-Path $RepoRoot $manifest.qt.installDir
+    $QtRoot = Resolve-RepoPath -RelativePath $manifest.qt.installDir -RepoRoot $RepoRoot
 }
 $QtRoot = (Resolve-Path -LiteralPath $QtRoot).ProviderPath
 $QtBin = Join-Path $QtRoot 'bin'

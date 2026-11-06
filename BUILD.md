@@ -137,6 +137,75 @@ powershell -ExecutionPolicy Bypass -File .\packaging\qifw\smoke\run-smoke.ps1
 
 ### 3.5 真实产品打包（需要 staging 树）
 
+#### 三个目录的关系
+
+```
+本仓库（打包器，git clone 得到）              D:\Orbbec\install-qt
+├─ build-installer.bat                        入口
+├─ packaging\qifw\toolchain\qt\               Qt + QIFW 实体（2.2 GB，不进 git，脚本重建）
+├─ packaging\qifw\setup-ui\                   安装器外壳（Qt Quick）源码
+└─ packaging\qifw\out\product\<时间戳>\       产物 Setup.exe / Installer.exe / result.json
+
+上游产品仓库（只有被读，从不被写）             <UpstreamRepo>  = D:\Orbbec\orbbecslicer
+├─ version.inc                               ← 唯一用到的文件（读 SLICER_APP_VERSION）
+└─ build\presets\windows-release\OrbbecSlicer\ ← 默认 staging（cmake --target install 的产物）
+   ├─ ob-slicer.exe                          程序本体
+   ├─ OrbbecSlicer.dll  avcodec-62.dll  TK*.dll  ...
+   ├─ resources\                             运行时资源（app_logo.ico 存在就用作安装器图标）
+   ├─ lib\  include\                         运行库（也一起打进安装包）
+   └─ ...                                    约 13,000 个文件 / 0.5 GB
+```
+
+打包做的事只有一件：把 **staging 目录整棵树** 逐字节复制成 `packages\com.orbbec.orbbecslicer\data`，
+再压成单文件安装器。所以：
+
+- 安装后 `C:\Program Files\OrbbecSlicer\` 里的内容 **与 staging 一一对应**（这就是「程序目录」）。
+- staging 不需要是「安装过的目录」，只要是**这份目录树**就行（编译产物、别人机器上的安装目录、拷贝的副本都可以）。
+- 本仓库**从不写入** staging 和上游仓库（`build-product.ps1` 会做打包前后哈希快照，被外部改动会立刻报错）。
+
+#### 换机器 / 换目录怎么让它找对路径
+
+`build-installer.bat` 的参数是原样转发的，路径解析顺序为
+**命令行参数 > 环境变量 > 自动向上查找 > 本机默认值**：
+
+| 输入 | 命令行 | 环境变量 | 自动查找 | 兜底默认值 |
+| --- | --- | --- | --- | --- |
+| staging 树 | `-StageRoot <绝对路径>` | `ORBBEC_STAGE_ROOT` | — | `<UpstreamRepo>\build\presets\windows-release\OrbbecSlicer` |
+| 上游仓库（读 `version.inc`） | `-UpstreamRepo <目录>` | `ORBBEC_UPSTREAM_REPO` | 从仓库根向上 5 层找含 `version.inc` 的目录 | `D:\Orbbec\orbbecslicer` |
+
+**自动查找**是为了「本仓库被放进上游仓库里」这种摆放。下面四种都无需任何参数：
+
+```
+D:\Orbbec\orbbecslicer\version.inc
+├─ install-qt\packaging\qifw\...      整体克隆搬到上游下     -> 仓库根 = install-qt
+├─ packaging\qifw\...                 只搬 packaging 目录    -> 仓库根 = packaging
+└─ packaging\qifw\...                 仓库根就是 packaging   -> 同上
+```
+
+如果 `packaging` 被直接拷进 `orbbecslicer`（没有单独的 `.git`），仓库根就等于 `orbbecslicer`，
+`version.inc` 就在仓库根上，同样能自动识别；此时 `packaging/qifw/out/` 的产物落在上游仓库里，
+**记得在上游仓库的 `.gitignore` 里加**：
+
+```gitignore
+/packaging/qifw/out/
+/packaging/qifw/toolchain/qt/
+/packaging/qifw/setup-ui/build/
+/packaging/qifw/setup-ui/dist/
+```
+
+另外 qifw 目录本身也做了两种布局的自适应（`<仓库根>\packaging\qifw` 与 `<仓库根>\qifw`），
+`manifest.json` 里以 `packaging/qifw/` 开头的相对路径会自动改写到实际位置。
+
+所以新机器上最省事的做法还是设两个用户环境变量（`setx` 后重开终端），之后**命令一个字都不用改**：
+
+```powershell
+setx ORBBEC_UPSTREAM_REPO "E:\src\orbbecslicer"
+setx ORBBEC_STAGE_ROOT    "E:\src\orbbecslicer\build\presets\windows-release\OrbbecSlicer"
+```
+
+没有 `version.inc`（只拿了别人的 staging 副本）时，`-UpstreamRepo` 仍指向一个含 `version.inc` 的目录即可——
+那个文件只提供版本号，不参与打包内容。找不到时会直接报错退出，不会拿默认版本号凑合。
+
 `build-product.ps1` 需要两样只读输入：
 
 | 输入 | 默认值 | 参数 |

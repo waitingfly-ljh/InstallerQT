@@ -33,7 +33,7 @@ param(
 $RepoRoot = Get-RepoRoot
 $Manifest = Get-ToolchainManifest -RepoRoot $RepoRoot
 $ToolchainRoot = Get-ToolchainRoot -Manifest $Manifest -RepoRoot $RepoRoot
-$OutDir = Resolve-RepoPath 'packaging/qifw/out' -RepoRoot $RepoRoot
+$OutDir = Resolve-QifwPath 'out' -RepoRoot $RepoRoot
 New-Item -ItemType Directory -Force -Path $ToolchainRoot, $OutDir | Out-Null
 
 Write-Log "仓库根: $RepoRoot" 'INFO'

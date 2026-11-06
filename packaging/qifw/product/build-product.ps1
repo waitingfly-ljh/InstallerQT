@@ -40,9 +40,10 @@
 #>
 [CmdletBinding()]
 param(
-    # 留空 ⇒ <UpstreamRepo>\build\presets\windows-release\OrbbecSlicer（在下方解析）
+    # 留空 ⇒ 依次取环境变量 ORBBEC_STAGE_ROOT、<UpstreamRepo>\build\presets\windows-release\OrbbecSlicer（在下方解析）
     [string]$StageRoot = '',
-    [string]$UpstreamRepo = 'D:\Orbbec\orbbecslicer',
+    # 留空 ⇒ 取环境变量 ORBBEC_UPSTREAM_REPO，都没有才回落到 D:\Orbbec\orbbecslicer（在下方解析）
+    [string]$UpstreamRepo = '',
     [ValidateSet(0, 1, 3, 5, 7, 9)][int]$Compression = 5,
     [string]$ArchiveFormat = '7z',
     [switch]$SkipInstallVerify,
@@ -62,10 +63,25 @@ $IfwBin = Join-Path (Resolve-RepoPath -RelativePath $Manifest.ifw.installDir -Re
 $binarycreator = Join-Path $IfwBin 'binarycreator.exe'
 $installerbase = Join-Path $IfwBin 'installerbase.exe'
 
+# 路径解析顺序：显式参数 > 环境变量 > 向上查找 version.inc（仓库被放进上游仓库时）> 本机默认值。
+# 换一台机器、或把本仓库挪进 orbbecslicer 目录下，命令本身都不用改。
+if ([string]::IsNullOrWhiteSpace($UpstreamRepo)) {
+    if (-not [string]::IsNullOrWhiteSpace($env:ORBBEC_UPSTREAM_REPO)) {
+        $UpstreamRepo = $env:ORBBEC_UPSTREAM_REPO
+    }
+    else {
+        # 从仓库根向上找含 version.inc 的目录（本仓库被放进上游仓库时的常见摆放）
+        $UpstreamRepo = Find-UpstreamRepo -StartDir $RepoRoot
+        if ([string]::IsNullOrWhiteSpace($UpstreamRepo)) { $UpstreamRepo = 'D:\Orbbec\orbbecslicer' }
+    }
+}
 # 默认 staging = 原项目 CMake preset 的安装产物（原项目已删除 packaging\windows\dist）
 if ([string]::IsNullOrWhiteSpace($StageRoot)) {
-    $StageRoot = Join-Path $UpstreamRepo 'build\presets\windows-release\OrbbecSlicer'
+    $StageRoot = if (-not [string]::IsNullOrWhiteSpace($env:ORBBEC_STAGE_ROOT)) { $env:ORBBEC_STAGE_ROOT }
+    else { Join-Path $UpstreamRepo 'build\presets\windows-release\OrbbecSlicer' }
 }
+$UpstreamRepo = $UpstreamRepo.TrimEnd('\')
+$StageRoot = $StageRoot.TrimEnd('\')
 
 $Stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $OutDir = Resolve-RepoPath "packaging/qifw/out/product/$Stamp" -RepoRoot $RepoRoot

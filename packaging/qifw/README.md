@@ -2,7 +2,17 @@
 
 用 Qt Installer Framework（QIFW）替代原项目的 NSIS + wx 引导方案，生成 OrbbecSlicer 的离线安装程序。
 
-**本目录的一切代码、脚本、配置、工具链与产物都只放在本仓库 `D:\Orbbec\install-qt` 内。** 原项目 `D:\Orbbec\orbbecslicer` 只作只读引用（staging 树、`version.inc`），任何脚本都不会写入它。
+**本目录的一切代码、脚本、配置、工具链与产物都只放在本仓库内。** 原项目 `D:\Orbbec\orbbecslicer` 只作只读引用（staging 树、`version.inc`），任何脚本都不会写入它。
+
+支持两种摆放（脚本自动适配，不需要改任何路径）：
+
+```
+<仓库根>\packaging\qifw\      独立克隆（现在的 D:\Orbbec\install-qt）
+<仓库根>\qifw\                本目录被放进 <上游仓库>\packaging 下
+```
+
+上游仓库（含 `version.inc` 的那个目录）按「命令行参数 > `ORBBEC_UPSTREAM_REPO` > 从仓库根向上自动查找 > `D:\Orbbec\orbbecslicer`」解析，
+所以把本仓库搬进 `orbbecslicer` 之后仍然是一条命令 `build-installer.bat install`。细节见仓库根 [`BUILD.md`](../../BUILD.md) 第 3.5 节。
 
 ## 目录
 

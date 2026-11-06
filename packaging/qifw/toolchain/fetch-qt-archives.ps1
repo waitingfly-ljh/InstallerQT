@@ -28,8 +28,8 @@ param(
 . "$PSScriptRoot\_common.ps1"
 
 $RepoRoot = Get-RepoRoot
-$ToolchainRoot = Resolve-RepoPath 'packaging/qifw/toolchain/qt' $RepoRoot
-$ArchiveDir = Resolve-RepoPath 'packaging/qifw/out/archives' $RepoRoot
+$ToolchainRoot = Resolve-QifwPath 'toolchain/qt' $RepoRoot
+$ArchiveDir = Resolve-QifwPath 'out/archives' $RepoRoot
 New-Item -ItemType Directory -Force -Path $ArchiveDir, $ToolchainRoot | Out-Null
 
 $officialBase = "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/$PackageFolder"
@@ -73,7 +73,11 @@ foreach ($a in $archives) {
     if (-not (Test-Path $path)) { $bad += "$file (缺失)"; continue }
     if (-not (Test-Path $shaPath)) { $bad += "$file (缺 .sha256)"; continue }
     $expected = (Get-Content -LiteralPath $shaPath -Raw).Split(' ')[0].Trim().ToLower()
-    $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLower()
+    # Get-FileHash（.NET 实现）在本机对 140MB+ 的 .7z 会给出错误结果（文件本身与官方值一致，
+    # certutil 核验通过），因此改用 certutil -hashfile 计算。
+    $hashLines = & "$env:SystemRoot\system32\certutil.exe" -hashfile $path SHA256 2>$null
+    $actual = (($hashLines | Where-Object { $_ -match '^[0-9a-fA-F]{64}$' } | Select-Object -First 1) -replace ' ', '').ToLower()
+    if (-not $actual) { $bad += "$file (certutil 计算哈希失败)"; continue }
     if ($expected -ne $actual) { $bad += "$file (期望 $expected / 实际 $actual)"; continue }
     Write-Log ("  OK {0}" -f $a.Name) 'OK'
 }

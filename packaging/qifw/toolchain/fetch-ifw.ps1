@@ -19,7 +19,7 @@ param([switch]$Force)
 
 $RepoRoot = Get-RepoRoot
 $Manifest = Get-ToolchainManifest -RepoRoot $RepoRoot
-$OutDir = Resolve-RepoPath 'packaging/qifw/out' $RepoRoot
+$OutDir = Resolve-QifwPath 'out' $RepoRoot
 $ArchiveDir = Join-Path $OutDir 'archives'
 New-Item -ItemType Directory -Force -Path $ArchiveDir | Out-Null
 
@@ -44,9 +44,15 @@ elseif (Test-Path -LiteralPath $shaPath) { (Get-Content -LiteralPath $shaPath -R
 else { '' }
 if (-not $expected) { throw '缺少期望校验值：manifest.ifw.archiveSha256 与 .sha256 文件均不可用。' }
 
+# Get-FileHash（.NET 实现）在本机对 140MB+ 的 .7z 会给出错误结果，统一改用 certutil 计算
+function Get-Sha256([string]$Path) {
+    $lines = & "$env:SystemRoot\system32\certutil.exe" -hashfile $Path SHA256 2>$null
+    ($lines | Where-Object { $_ -match '^[0-9a-fA-F]{64}$' } | Select-Object -First 1) -replace ' ', ''
+}
+
 # 中断过的下载会留下半截 .7z；若只按"文件存在"跳过，之后每次都会卡在校验失败上。
 if (Test-Path -LiteralPath $archivePath) {
-    $existing = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLower()
+    $existing = (Get-Sha256 $archivePath).ToLower()
     if ($existing -ne $expected) {
         Write-Log "已有归档校验不符（可能是上次中断的残缺文件），删除后重下: $existing" 'WARN'
         Remove-Item -LiteralPath $archivePath -Force

@@ -25,9 +25,17 @@ rem ==========================================================================
 set "ROOT=%~dp0"
 pushd "%ROOT%" >nul
 
-set "TOOLCHAIN_PS1=%ROOT%packaging\qifw\toolchain\install-toolchain.ps1"
-set "CHECKENV_PS1=%ROOT%packaging\qifw\toolchain\check-env.ps1"
-set "PRODUCT_PS1=%ROOT%packaging\qifw\product\build-product.ps1"
+rem  ---------------------------------------------------------------------------
+rem  qifw dir detection -- supports two layouts:
+rem    <repo root>\packaging\qifw   (standalone clone of this repo)
+rem    <repo root>\qifw             (this repo placed under <upstream>\packaging)
+rem  ---------------------------------------------------------------------------
+set "QIFW_DIR=%ROOT%packaging\qifw"
+if not exist "%QIFW_DIR%\toolchain\install-toolchain.ps1" if exist "%ROOT%qifw\toolchain\install-toolchain.ps1" set "QIFW_DIR=%ROOT%qifw"
+
+set "TOOLCHAIN_PS1=%QIFW_DIR%\toolchain\install-toolchain.ps1"
+set "CHECKENV_PS1=%QIFW_DIR%\toolchain\check-env.ps1"
+set "PRODUCT_PS1=%QIFW_DIR%\product\build-product.ps1"
 
 rem ---- split the "install" switch out; everything else is forwarded ---------
 set "DO_INSTALL="
@@ -129,13 +137,13 @@ if defined DO_INSTALL (
 powershell -NoProfile -ExecutionPolicy Bypass -File "%PRODUCT_PS1%" %BUILD_ARGS%
 if errorlevel 1 (
     echo.
-    echo [ERROR] Build failed. See packaging\qifw\out\product\^<timestamp^>\build-product.log
+    echo [ERROR] Build failed. See %QIFW_DIR%\out\product\^<timestamp^>\build-product.log
     goto :fail
 )
 
 rem ---- locate the newest output directory -----------------------------------
 set "LATEST="
-for /f "delims=" %%D in ('dir /b /ad /o-n "%ROOT%packaging\qifw\out\product" 2^>nul') do (
+for /f "delims=" %%D in ('dir /b /ad /o-n "%QIFW_DIR%\out\product" 2^>nul') do (
     if not defined LATEST set "LATEST=%%D"
 )
 
@@ -144,13 +152,13 @@ echo ============================================================
 echo  BUILD OK
 echo ============================================================
 if defined LATEST (
-    echo  Output dir: %ROOT%packaging\qifw\out\product\%LATEST%
+    echo  Output dir: %QIFW_DIR%\out\product\%LATEST%
     echo.
-    for %%F in ("%ROOT%packaging\qifw\out\product\%LATEST%\*.exe") do echo    %%~nxF  %%~zF bytes
+    for %%F in ("%QIFW_DIR%\out\product\%LATEST%\*.exe") do echo    %%~nxF  %%~zF bytes
     echo.
-    echo  Result: %ROOT%packaging\qifw\out\product\%LATEST%\result.json
+    echo  Result: %QIFW_DIR%\out\product\%LATEST%\result.json
 ) else (
-    echo  [WARN] No output directory found under packaging\qifw\out\product
+    echo  [WARN] No output directory found under %QIFW_DIR%\out\product
 )
 
 if /i not "%NO_PAUSE%"=="1" pause
