@@ -38,19 +38,26 @@ toolchain/qt/Tools/QtInstallerFramework/4.11.0/bin/   binarycreator / installerb
 
 ## 快速开始
 
+> **第一次 clone、机器上没有工具链？** 先看仓库根的 [`BUILD.md`](../../BUILD.md)：环境要求、取工具链、
+> staging 从哪来、常见报错都在那里；本文侧重打包细节与约定。
+
 从仓库根 `D:\Orbbec\install-qt` 执行（Windows PowerShell 5.1）：
 
 ```powershell
 # 0. 一键构建（仓库根有 build-installer.bat；双击或命令行均可）
-.\build-installer.bat
+.\build-installer.bat install                   # 首次：取工具链 + 打包
+.\build-installer.bat                           # 之后：工具链已就绪，直接打包
+#   .\build-installer.bat install -Force        强制重下重解工具链
 #   .\build-installer.bat -Compression 9        传给 build-product.ps1
 #   .\build-installer.bat -WithoutSetupUi       只交付 QIFW 原生包
 #   .\build-installer.bat -SkipInstallVerify    跳过安装/卸载回路
+#   .\build-installer.bat help                  参数帮助
 #   设 NO_PAUSE=1 可禁用结束时的按任意键（CI 用）
 ```
 
 ```powershell
 # 1. 获取工具链（首次约 2.2 GB；重复执行幂等，已完成的部分会跳过）
+#    通常不需要单独跑：build-installer.bat install 会调用它。只有排障或只补一半时才直接用。
 powershell -ExecutionPolicy Bypass -File .\packaging\qifw\toolchain\install-toolchain.ps1
 
 # 2. 检查环境，退出码 0 表示可用
@@ -103,16 +110,9 @@ powershell -ExecutionPolicy Bypass -File .\packaging\qifw\product\build-product.
 
 只有整个流程通过后，才会清掉 `out/staging-work/` 里**其它批次**的工作副本（每份约 0.5 GB）；失败批次保留现场。
 
-失败路径可以自己复现（改动只发生在仓库内的副本，不会碰原项目）：
-
-```powershell
-# 工作副本改 1 字节（内容变化）/ 删掉文件（打包会先失败）
-powershell -ExecutionPolicy Bypass -File .\packaging\qifw\out\failure-tests.ps1 -Mode WorkCopyContent
-# 验证 staging 侧判据时，把 staging 镜像到仓库内再指过去（原项目不动）
-robocopy D:\Orbbec\orbbecslicer\packaging\windows\dist\stage24\stage .\packaging\qifw\out\test-mirror\stage24\stage /E /NFL /NDL /NJH /NJS
-powershell -ExecutionPolicy Bypass -File .\packaging\qifw\out\failure-tests.ps1 `
-    -Mode StageSize -TestStage "$PWD\packaging\qifw\out\test-mirror\stage24\stage"
-```
+失败路径的判据（内容变化 / 文件缺失 / staging 变动）都写在 `product/build-product.ps1` 的校验环节里：
+脚本先比对 staging 与工作副本，打包后再逐个比对安装结果；任何不一致都会以非零退出并作废产物。
+要手动复现，改 `out/staging-work/<时间戳>/packages/<id>/data/` 下的文件再重跑即可（只影响仓库内副本）。
 
 ## 安装器外壳（Qt Quick）
 
@@ -161,17 +161,66 @@ bundle.zip: ui/（外壳 exe + Qt 运行时 + qml/ + qt.conf）
 | `--uninstall` | 直接进入品牌化卸载流程（系统卸载入口使用） |
 | `--install-dir <路径>` | 指定要卸载的安装目录（与 `--uninstall` 连用） |
 | `--uninstaller <路径>` | 内部参数：启动器把解压出来的卸载器源文件传给界面，安装成功后部署 |
+| `--with-options` | 测试钩子：静默安装时使用安装设置页默认选项（快捷方式/.3mf/完成后启动），供回路验证卸载还原 |
+| `--lang <code>` | 指定界面语言（`en` / `zh_CN`，也可写 `zh`）；缺省按系统区域选择，未知语言回退英文。静默模式下同样有效 |
 
 维护（修复/升级/降级）时 QIFW 拒绝覆盖已安装目录，外壳会先把旧程序目录改名为
 `<dir>.orbbec-backup-<pid>`，安装失败/取消时改回，成功后删除备份。卸载的数据清理
 （保留个人数据 / 删除全部 / 保留用户数据文件夹）与文案见 `docs/installer-copy.md`。
 
+**品牌与收尾**：
+- 外壳、`Setup.exe` 启动器、卸载器都嵌入了 `resources/app.ico`；窗口/任务栏、桌面/开始菜单快捷方式与程序与功能条目使用同一图标。
+- 安装成功时进度条先到 100% 并停留约 0.6s 再切完成页；失败/取消停留约 0.3s（见 `--selftest --check-finish-timing`）。
+- 卸载成功会删除安装时创建的桌面快捷方式、开始菜单快捷方式、卸载登记与卸载器，并用安装时记录的原值还原 `.3mf`/`.stl` 关联；卸载失败不清理这些现场。
+- 程序与功能条目恰好一条，包含 `Publisher`/`EstimatedSize`/`DisplayIcon` 等字段；per-machine 安装且以管理员运行优先写 HKLM，否则写 HKCU。
+
 **品牌化卸载入口**：安装/修复/升级成功后，外壳会把 `OrbbecSlicerUninstaller.exe` 部署到
 `%LOCALAPPDATA%\Orbbec\OrbbecSlicer\uninstaller\`，并把 Windows 卸载登记
 （`HKCU\...\Uninstall\{QIFW-GUID}`）的 `UninstallString` / `QuietUninstallString` /
-`DisplayIcon` 与开始菜单里的「卸载 OrbbecSlicer」快捷方式都指向它。`maintenancetool.exe`
+`DisplayIcon` 与开始菜单里的 `Uninstall OrbbecSlicer` 快捷方式都指向它。`maintenancetool.exe`
 仍留在安装目录里做维护/更新，但不再是用户可见的卸载入口。卸载完成后卸载器会删除自己、
 登记与快捷方式。已安装的旧版本会在下一次修复/升级/重装后自动切换。
+
+## 语言与翻译
+
+- **英文是源语言与默认语言**：所有用户可见文案在源码里写成英文，并用 `qsTr()`（QML）或
+  `tr()`（C++）包裹；诊断日志（`appendLog`、`--selftest` 输出）保持英文，便于排障与脚本匹配。
+- **中文是可选语言**：界面语言按 `--lang <code>` > 系统区域（`zh*` → `zh_CN`）> 英文 的顺序选择。
+  `--lang zh_CN` / `--lang zh` / `--lang en` 都可用；不支持的语言代码回退英文并在日志中记录一条警告。
+  语言在启动时确定（创建 QML 引擎之前安装 `QTranslator`），安装器运行期间不切换。
+- **翻译资源随包交付**：`translations/OrbbecSlicerSetup_zh_CN.ts` 经 `lrelease` 编译为 `.qm`，
+  由 CMake 的 `qt_add_translations` 嵌入可执行文件的 `:/i18n/OrbbecSlicerSetup_zh_CN.qm`，
+  随 `Setup.exe` / 卸载器一起交付，不依赖目标机上的额外文件。`build-setup.ps1` 会断言该资源
+  已嵌入，并输出未翻译条目数（缺失条目回退英文，不阻断构建）。
+- **字体随语言切换**：中文用 `Microsoft YaHei`，英文用 `Segoe UI`，集中在 `UiTheme.qml` 的
+  `fontFamily`，各页面不单独判断语言。
+- **外部固定名称不翻译**：产品名 `OrbbecSlicer`、桌面快捷方式 `OrbbecSlicer.lnk`、卸载快捷方式
+  `Uninstall OrbbecSlicer.lnk`、程序与功能显示名、`.3mf`/`.stl` 关联 ProgId 始终为英文，
+  避免切换语言后出现重复的卸载登记或找不到快捷方式。
+
+更新翻译（改了界面文案后）：
+
+```powershell
+# 1. 从源码重新提取，保留已有翻译并标记新增/过时条目
+packaging\qifw\toolchain\qt\6.8.3\msvc2022_64\bin\lupdate.exe `
+    packaging\qifw\setup-ui\src\*.cpp packaging\qifw\setup-ui\src\*.h `
+    packaging\qifw\setup-ui\*.qml packaging\qifw\setup-ui\pages\*.qml `
+    -ts packaging\qifw\setup-ui\translations\OrbbecSlicerSetup_zh_CN.ts
+
+# 2. 正常构建时 lrelease 自动执行；也可手工校验翻译是否完整
+packaging\qifw\toolchain\qt\6.8.3\msvc2022_64\bin\lrelease.exe `
+    packaging\qifw\setup-ui\translations\OrbbecSlicerSetup_zh_CN.ts
+
+# 3. 中文界面自检（翻译未生效时以非零退出）
+.\packaging\qifw\setup-ui\dist\OrbbecSlicerSetup.exe --selftest --lang zh_CN
+
+# 4. 中文界面截图（输出 out/ui-shots/<view>-zh.png）
+powershell -ExecutionPolicy Bypass -File .\packaging\qifw\setup-ui\tools\capture-ui.ps1 -Lang zh_CN
+```
+
+新增第三种语言：在 `translations/` 下新建 `<name>_<locale>.ts`，在 `CMakeLists.txt` 的
+`qt_add_translations(... TS_FILES ...)` 中追加该文件，并让 `main.cpp` 的 `resolveLanguage()`
+接受该语言代码（当前只识别 `zh*` 与 `en`）。
 
 ## 冒烟包与 QIFW 命令行约定
 
@@ -285,7 +334,7 @@ Pop-Location
 
 ## 约束
 
-- **不改原项目**：只读 `D:\Orbbec\orbbecslicer\packaging\windows\dist\...\stage` 与 `version.inc`。
+- **不改原项目**：只读 `D:\Orbbec\orbbecslicer\build\presets\windows-release\OrbbecSlicer`（默认 staging，即原项目 CMake preset 的安装产物）与 `version.inc`；用 `-StageRoot` 可指向别处。
 - **不写仓库外**：工具根、输出目录、归档缓存、临时安装目录都在仓库内；越界路径会被拒绝。唯一例外见「仓库外的写入」：IFW 的 `%TEMP%\binarycreator-*`（无参数可改，退出时自动删除）。
 - **版本以 manifest 为准**：`check-env.ps1` 校验工具位于 `manifest.ifw.installDir` 之下，与登记的版本不一致即非零退出。
 - **清理/回滚**：删除 `toolchain/qt/` 与 `out/` 即可；仓库内其余文件均为小文本。

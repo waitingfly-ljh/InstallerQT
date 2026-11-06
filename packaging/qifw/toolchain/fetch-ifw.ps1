@@ -36,6 +36,22 @@ $archivePath = Join-Path $ArchiveDir $archiveName
 $shaPath = "$archivePath.sha256"
 
 # --- 1. 下载 + 官方校验值 -------------------------------------------------
+if (-not (Test-Path -LiteralPath $shaPath)) {
+    Invoke-Native -FilePath 'curl.exe' -ArgumentList @('-sL', '--fail', '-o', $shaPath, "$($Manifest.ifw.archiveUrl).sha256") | Out-Null
+}
+$expected = if ($Manifest.ifw.archiveSha256) { $Manifest.ifw.archiveSha256.ToLower() }
+elseif (Test-Path -LiteralPath $shaPath) { (Get-Content -LiteralPath $shaPath -Raw).Split(' ')[0].Trim().ToLower() }
+else { '' }
+if (-not $expected) { throw '缺少期望校验值：manifest.ifw.archiveSha256 与 .sha256 文件均不可用。' }
+
+# 中断过的下载会留下半截 .7z；若只按"文件存在"跳过，之后每次都会卡在校验失败上。
+if (Test-Path -LiteralPath $archivePath) {
+    $existing = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLower()
+    if ($existing -ne $expected) {
+        Write-Log "已有归档校验不符（可能是上次中断的残缺文件），删除后重下: $existing" 'WARN'
+        Remove-Item -LiteralPath $archivePath -Force
+    }
+}
 if (-not (Test-Path -LiteralPath $archivePath)) {
     Write-Log "下载 $archiveName" 'STEP'
     $r = Invoke-Native -FilePath 'curl.exe' -ArgumentList @(
@@ -43,17 +59,10 @@ if (-not (Test-Path -LiteralPath $archivePath)) {
     )
     if ($r.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $archivePath)) { throw "下载失败: $($Manifest.ifw.archiveUrl)" }
 }
-if (-not (Test-Path -LiteralPath $shaPath)) {
-    Invoke-Native -FilePath 'curl.exe' -ArgumentList @('-sL', '--fail', '-o', $shaPath, "$($Manifest.ifw.archiveUrl).sha256") | Out-Null
-}
 
 # --- 2. 核验 --------------------------------------------------------------
 Write-Log '核验 SHA-256' 'STEP'
-$expected = if ($Manifest.ifw.archiveSha256) { $Manifest.ifw.archiveSha256.ToLower() }
-elseif (Test-Path -LiteralPath $shaPath) { (Get-Content -LiteralPath $shaPath -Raw).Split(' ')[0].Trim().ToLower() }
-else { '' }
 $actual = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLower()
-if (-not $expected) { throw '缺少期望校验值：manifest.ifw.archiveSha256 与 .sha256 文件均不可用。' }
 if ($expected -ne $actual) { throw "校验失败：期望 $expected / 实际 $actual" }
 Write-Log "  OK $actual" 'OK'
 
@@ -77,8 +86,11 @@ finally {
 }
 
 foreach ($t in $Manifest.tools) {
-    $p = Join-Path $ifwDir (Split-Path -Leaf $t.relativePath)
-    if (-not (Test-Path -LiteralPath $p)) { throw "工具缺失: $($t.name)" }
+    # manifest 的 relativePath 相对工具根（qt/），要剥掉 Tools/QtInstallerFramework/<ver>/ 前缀再拼到 ifwDir 下，
+    # 否则会去找 4.11.0\binarycreator.exe（实际在 4.11.0\bin\）。
+    $rel = $t.relativePath -replace '^Tools/QtInstallerFramework/[^/]+/', ''
+    $p = Join-Path $ifwDir ($rel -replace '/', '\')
+    if (-not (Test-Path -LiteralPath $p)) { throw "工具缺失: $($t.name) ($p)" }
     Write-Log ("  {0,-16} {1}" -f $t.name, $p) 'OK'
 }
 

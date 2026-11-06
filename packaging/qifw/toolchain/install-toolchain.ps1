@@ -55,6 +55,11 @@ Write-Log "py7zr OK" 'OK'
 $curl = (Get-Command curl.exe -ErrorAction SilentlyContinue).Source
 if (-not $curl) { throw '未找到 curl.exe（Windows 10 1803+ 自带）。' }
 
+# 子脚本用 [switch]$Force，不能写成 -Force:$Force —— 对原生 powershell.exe 调用时
+# PowerShell 会把它渲染成字符串 "-Force:False"，被子脚本判为无法转换的类型。
+$forceArg = @()
+if ($Force) { $forceArg += '-Force' }
+
 # --- 1. Qt ----------------------------------------------------------------
 $qtBin = Join-Path $ToolchainRoot ("{0}\{1}\bin\Qt6Core.dll" -f $Manifest.qt.version, $Manifest.qt.archDir)
 if ((Test-Path -LiteralPath $qtBin) -and -not $Force) {
@@ -65,7 +70,7 @@ elseif ($SkipQt) {
 }
 else {
     Write-Log '== 获取 Qt ==' 'STEP'
-    & powershell -ExecutionPolicy Bypass -NoProfile -File (Join-Path $PSScriptRoot 'fetch-qt-archives.ps1')
+    & powershell -ExecutionPolicy Bypass -NoProfile -File (Join-Path $PSScriptRoot 'fetch-qt-archives.ps1') @forceArg
     if ($LASTEXITCODE -ne 0) { throw "fetch-qt-archives.ps1 失败 (exit $LASTEXITCODE)" }
     if (-not (Test-Path -LiteralPath $qtBin)) { throw "Qt 解包后仍找不到 $qtBin" }
 }
@@ -81,7 +86,7 @@ if ($SkipIfw) {
 }
 elseif (-not (Test-Path -LiteralPath (Join-Path $ifwBin "$($Manifest.ifw.version)\bin\binarycreator.exe"))) {
     Write-Log '== 获取 QIFW ==' 'STEP'
-    & powershell -ExecutionPolicy Bypass -NoProfile -File (Join-Path $PSScriptRoot 'fetch-ifw.ps1') -Force:$Force
+    & powershell -ExecutionPolicy Bypass -NoProfile -File (Join-Path $PSScriptRoot 'fetch-ifw.ps1') @forceArg
     if ($LASTEXITCODE -ne 0) { throw "fetch-ifw.ps1 失败 (exit $LASTEXITCODE)" }
 }
 
