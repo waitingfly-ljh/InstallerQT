@@ -1,3 +1,4 @@
-# QIFW 冒烟载荷必须逐字节保持一致（expected-payload.json 登记了 sha256），
-# 禁止任何 EOL 转换，否则新 clone 在 core.autocrlf=true 下会校验失败。
+# QIFW smoke payload must stay byte-for-byte identical (its sha256 is recorded in
+# expected-payload.json); no EOL conversion is allowed, otherwise verification fails on a
+# fresh clone with core.autocrlf=true.
 packaging/qifw/smoke/packages/com.orbbec.smoke/data/** -text -diff
