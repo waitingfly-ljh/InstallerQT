@@ -2,26 +2,26 @@
 import QtQuick
 import SetupUi
 
-// 通用按钮（与评审稿 .button / .button.primary / .button.danger 对应）。
-// 单独成文件而不是 Ui.qml 的内联 component：本工程按绝对 qrc 路径加载模块，
-// 内联组件里的类型引用与 Theme 实例在 Qt 6.8 下会解析成 undefined（见 UiTheme.qml）。
+// Generic button (corresponds to design mockup .button / .button.primary / .button.danger).
+// Kept as a separate file instead of an inline component in Ui.qml: this project loads modules via absolute qrc paths, and
+// type references and Theme instances inside inline components resolve to undefined under Qt 6.8 (see UiTheme.qml).
 Rectangle {
     id: b
-    UiTheme { id: theme }   // 普通属性对象，放在 id 之后（Qt 6.8 下 id 必须紧跟根对象）
+    UiTheme { id: theme }   // Plain property object placed after the id (under Qt 6.8 the id must immediately follow the root object)
 
     property string text: ""
     property bool primary: false
     property bool danger: false
     property bool enabledState: true
-    // 禁用态沿用按钮本色、整只按钮压到 45% 不透明度（评审稿 .button:disabled { opacity: .45 }），
-    // 否则主按钮会退成一块灰底深字，比评审稿更重。
+    // The disabled state keeps the button's own color and dims the whole button to 45% opacity (design mockup .button:disabled { opacity: .45 }),
+    // otherwise the primary button would degrade into gray background with dark text, heavier than the design mockup.
     opacity: enabledState ? 1 : 0.45
     Behavior on opacity { NumberAnimation { duration: theme.animFast } }
     signal clicked()
 
-    // 评审稿 .button { min-width: 88px; padding: 0 16px }；高度 36px（目录框等需要对齐时单独改）。
-    // 悬停：.button:hover { border-color: 品牌浅色; color: var(--brand-dark) }；
-    // 主按钮悬停换成 brand-dark；悬停时也给主按钮补上同色描边，尺寸保持不变。
+    // Design mockup .button { min-width: 88px; padding: 0 16px }; height 36px (adjust individually when aligning directory boxes, etc.).
+    // Hover: .button:hover { border-color: brand light color; color: var(--brand-dark) };
+    // the primary button switches to brand-dark on hover; the primary button also gets a matching-color border on hover, size unchanged.
     implicitWidth: Math.max(88, label.implicitWidth + 32)
     implicitHeight: 36
     radius: theme.radius

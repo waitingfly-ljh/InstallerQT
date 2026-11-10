@@ -6,16 +6,16 @@
 /openspec
 OrbbecSlicer_安装与首次设置_交互原型.html
 
-# QIFW 打包：工具根（数 GB 的 Qt/QIFW）与产物不入库
+# QIFW packaging: the tool root (multi-GB Qt/QIFW) and its artifacts are not committed
 packaging/qifw/toolchain/qt/
 packaging/qifw/out/*
 !packaging/qifw/out/.gitkeep
 
-# 临时/本地状态
+# Temporary / local state
 *.log.tmp
 aqtinstall.log
 
-# 安装器外壳的构建产物与本地截图/日志
+# Installer shell build output, local screenshots and logs
 packaging/qifw/setup-ui/build/
 packaging/qifw/setup-ui/build-shot/
 packaging/qifw/setup-ui/dist/

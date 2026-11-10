@@ -1,6 +1,6 @@
 ﻿{
   "schemaVersion": 1,
-  "description": "OrbbecSlicer QIFW 打包工具链清单。所有工具获取到 toolchainRoot（仓库内相对路径），不写到本仓库之外。",
+  "description": "OrbbecSlicer QIFW packaging toolchain manifest. All tools are fetched into toolchainRoot (a path relative to the repository) and are never written outside this repository.",
   "platform": "windows_x86",
   "architecture": "win64_msvc2022_64",
   "toolchainRoot": "packaging/qifw/toolchain/qt",
@@ -13,7 +13,7 @@
     "packageFolder": "qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64",
     "archiveTag": "6.8.3-0-202503201308",
     "modules": [],
-    "note": "aqt 3.3.0 的下载器在 download.qt.io 302 跳到 CDN 时会对大归档 read timeout，故 Qt 由 fetch-qt-archives.ps1 用 curl 并发下载 + 官方 sha256 核验 + py7zr 解包；等价于 aqt install-qt 的结果。"
+    "note": "aqt 3.3.0's downloader hits a read timeout on large archives when download.qt.io 302-redirects to the CDN, so Qt is fetched by fetch-qt-archives.ps1 using curl parallel download + official sha256 verification + py7zr extraction; equivalent to the result of aqt install-qt."
   },
   "ifw": {
     "version": "4.11.0",
@@ -22,7 +22,7 @@
     "archive": "4.11.0-0-202603231357ifw-win-x64.7z",
     "archiveUrl": "https://download.qt.io/online/qtsdkrepository/windows_x86/ifw/tools_ifw_411/qt.tools.ifw.411/4.11.0-0-202603231357ifw-win-x64.7z",
     "archiveSha256": "c47201c4f6a82a8b607daa245237f40831d78425e904edd1514b71fd17efefc1",
-    "note": "QIFW 4.11 只在 windows_x86/ifw/ channel 发布，且 aqt 的 target 白名单不含 ifw，无法用 aqt install-tool 获取；改由 fetch-ifw.ps1 直接用 archiveUrl 下载。"
+    "note": "QIFW 4.11 is only published in the windows_x86/ifw/ channel, and aqt's target allowlist does not include ifw, so it cannot be fetched with aqt install-tool; fetch-ifw.ps1 downloads it directly via archiveUrl instead."
   },
   "tools": [
     {
@@ -30,14 +30,14 @@
       "relativePath": "Tools/QtInstallerFramework/4.11.0/bin/binarycreator.exe",
       "versionArgs": ["--help"],
       "required": true,
-      "note": "不提供 --version；--help 输出 Usage 且退出 0，版本以目录名（manifest.ifw.version）为准"
+      "note": "does not provide --version; --help prints Usage and exits 0, so the version is taken from the directory name (manifest.ifw.version)"
     },
     {
       "name": "installerbase",
       "relativePath": "Tools/QtInstallerFramework/4.11.0/bin/installerbase.exe",
       "versionArgs": ["--help"],
       "required": true,
-      "note": "无参运行会打印 'No marker found' 并以非 0 退出，那是正常行为，不代表不可用"
+      "note": "running it with no arguments prints 'No marker found' and exits non-zero; that is normal behavior and does not mean it is unavailable"
     },
     {
       "name": "archivegen",
@@ -54,6 +54,6 @@
   ],
   "verification": {
     "checkedAt": "2026-10-30",
-    "note": "所有归档均以官方 .sha256 核对通过后才解包。"
+    "note": "All archives are extracted only after passing verification against the official .sha256."
   }
 }

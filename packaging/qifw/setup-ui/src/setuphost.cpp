@@ -15,9 +15,9 @@
 #include <cstring>
 
 namespace {
-// 追加在 PE 末尾的数据区索引（见 design.md D3 与 tasks 7.1）：
-//   [payload 字节][magic 8B "OSUI1"][offset 8B][length 8B][sha256 32B][version 4B]
-// 全部小端；magic 之后的 4 字节是保留位，与任务书里的 "magic OSUI1" 对齐。
+// Index of the data area appended to the end of the PE (see design.md D3 and tasks 7.1):
+//   [payload bytes][magic 8B "OSUI1"][offset 8B][length 8B][sha256 32B][version 4B]
+// All little-endian; the 4 bytes after magic are reserved, matching "magic OSUI1" in the task spec.
 constexpr char kMagic[8] = {'O', 'S', 'U', 'I', '1', 0, 0, 0};
 constexpr qint64 kTrailerSize = 8 + 8 + 8 + 32 + 4;
 
@@ -32,7 +32,8 @@ qint64 readInt64(const QByteArray &data, int offset)
 SetupHost::SetupHost(Environment *env, QObject *parent) : QObject(parent), m_env(env)
 {
     m_engine = new SetupEngine(env, this);
-    // 自包含卸载器的源文件由 Setup.exe 启动器在解压后传入（安装成功后部署）。
+    // The self-contained uninstaller source file is passed in by the Setup.exe launcher after
+    // extraction (deployed after a successful install).
     const QStringList args = QCoreApplication::arguments();
     for (int i = 1; i + 1 < args.size(); ++i) {
         if (args.at(i) == QStringLiteral("--uninstaller"))
@@ -74,8 +75,8 @@ void SetupHost::setReleaseSelfTest(bool v)
 
 void SetupHost::locatePayload()
 {
-    // 已打包模式：数据区紧随可执行文件尾部。
-    // 读自身所在文件，而不是 argv[0]：rename/copy 后路径可能不同。
+    // Packaged mode: the data area immediately follows the executable's tail.
+    // Read the file the executable itself lives in, not argv[0]: the path may differ after rename/copy.
     const QString self = QCoreApplication::applicationFilePath();
     QFile f(self);
     if (f.open(QIODevice::ReadOnly)) {
@@ -99,7 +100,7 @@ void SetupHost::locatePayload()
         f.close();
     }
 
-    // 开发模式：--payload 指定的外部安装包。
+    // Development mode: external installer package specified by --payload.
     const QStringList args = QCoreApplication::arguments();
     for (int i = 1; i < args.size(); ++i) {
         QString p;
@@ -113,12 +114,12 @@ void SetupHost::locatePayload()
             m_payloadPath = QFileInfo(p).absoluteFilePath();
             m_payloadReady = true;
             m_engine->setPayloadPath(m_payloadPath);
-            // 开发模式的版本取自文件名 <产品>-<版本>-<架构>-Installer.exe。
+            // Development mode version comes from the file name <product>-<version>-<arch>-Installer.exe.
             const QStringList parts = QFileInfo(p).completeBaseName().split(QLatin1Char('-'));
             if (parts.size() >= 3)
                 m_payloadVersion = parts.at(1);
         } else {
-            m_payloadError = QStringLiteral("指定的安装包不存在：%1").arg(p);
+            m_payloadError = tr("The specified installer package does not exist: %1").arg(p);
         }
     }
     m_mode = QStringLiteral("development");
@@ -130,19 +131,19 @@ void SetupHost::releasePayloadFromSelf()
     const QString self = QCoreApplication::applicationFilePath();
     QFile f(self);
     if (!f.open(QIODevice::ReadOnly)) {
-        m_payloadError = QStringLiteral("无法读取安装程序自身：%1").arg(self);
+        m_payloadError = tr("Cannot read the installer itself: %1").arg(self);
         emit payloadPathChanged();
         return;
     }
     const qint64 size = f.size();
     if (!f.seek(size - kTrailerSize)) {
-        m_payloadError = QStringLiteral("安装程序尾部数据不完整");
+        m_payloadError = tr("The installer trailer data is incomplete");
         emit payloadPathChanged();
         return;
     }
     const QByteArray trailer = f.read(kTrailerSize);
     if (trailer.size() != kTrailerSize) {
-        m_payloadError = QStringLiteral("安装程序尾部数据不完整");
+        m_payloadError = tr("The installer trailer data is incomplete");
         emit payloadPathChanged();
         return;
     }
@@ -150,7 +151,7 @@ void SetupHost::releasePayloadFromSelf()
     const qint64 payloadLength = readInt64(trailer, 16);
     const QByteArray expectHash = trailer.mid(24, 32);
 
-    // 释放目录按内容位置哈希命名，可跨次复用。
+    // The release directory is named by a hash of the content position, reusable across runs.
     const QString releaseRoot = QDir(QDir::tempPath()).filePath(QStringLiteral("OrbbecSlicerSetup"));
     const QString hash = QString::fromLatin1(QCryptographicHash::hash(
                                                  QByteArray::number(payloadOffset) + ':' + QByteArray::number(payloadLength),
@@ -162,14 +163,14 @@ void SetupHost::releasePayloadFromSelf()
     if (!QFileInfo::exists(out) || QFileInfo(out).size() != payloadLength) {
         QFile src(self);
         if (!src.open(QIODevice::ReadOnly)) {
-            m_payloadError = QStringLiteral("无法读取负载数据");
+            m_payloadError = tr("Cannot read payload data");
             emit payloadPathChanged();
             return;
         }
         src.seek(payloadOffset);
         QFile dst(out);
         if (!dst.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            m_payloadError = QStringLiteral("无法写出负载文件：%1").arg(QDir::toNativeSeparators(out));
+            m_payloadError = tr("Cannot write the payload file: %1").arg(QDir::toNativeSeparators(out));
             emit payloadPathChanged();
             return;
         }
@@ -185,7 +186,7 @@ void SetupHost::releasePayloadFromSelf()
         }
         dst.close();
         if (remaining != 0 || h.result() != expectHash) {
-            m_payloadError = QStringLiteral("安装包负载校验失败（可能已损坏）");
+            m_payloadError = tr("Installer package payload verification failed (possibly corrupted)");
             QFile::remove(out);
             emit payloadPathChanged();
             return;
@@ -200,8 +201,9 @@ void SetupHost::releasePayloadFromSelf()
 
 void SetupHost::schedulePayloadCleanup()
 {
-    // 释放目录按内容位置哈希命名；进程退出时（安装完成或取消）都删掉，
-    // 避免 %TEMP% 里长期留一份 200MB 的安装包。文件被占用时删除会失败，忽略即可。
+    // The release directory is named by a hash of the content position; delete it when the
+    // process exits (install complete or cancelled), avoiding a 200MB installer package
+    // lingering in %TEMP%. Deletion fails if the file is in use; ignore that.
     connect(qApp, &QCoreApplication::aboutToQuit, this, [this] {
         if (!m_releaseDir.isEmpty())
             QDir(m_releaseDir).removeRecursively();

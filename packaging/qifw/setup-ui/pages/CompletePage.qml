@@ -3,24 +3,24 @@ import QtQuick
 import QtQuick.Layouts
 import SetupUi
 
-// 完成页：完成图标 + 结果说明 + 立即启动。
-// 同时用于安装、修复/升级/降级、卸载三种完成态（标题与按钮文案由外部给出）。
+// Complete page: completion icon + result copy + launch now.
+// Also used for all three completion states: install, repair/upgrade/downgrade, and uninstall (title and button text are supplied externally).
 Item {
     id: page
 
-    // 页面绘制在 AppFrame 的内容区里（尺寸 = 窗口 − 标题栏/侧栏/内边距）。但页面拿到的
-    // parent 尺寸在这个构造顺序下是 0（AppFrame 布局晚一步才定下来，页面的 anchors.fill
-    // 不会跟着重算），内容区的 ColumnLayout 于是按最窄一行（97px）排版，自动换行的地方
-    // 一律提前折行。所以布局不跟 parent 走，直接按窗口尺寸算内容区。窗口尺寸未知时
-    // （隐身的冒烟副本）退回默认 940×650。
+    // The page is drawn inside AppFrame's content area (size = window − title bar/side bar/padding). But the
+    // parent size the page receives in this construction order is 0 (AppFrame's layout settles a step later, so the page's anchors.fill
+    // is not recalculated), and the content area's ColumnLayout therefore lays out to the narrowest row (97px), wrapping
+    // early wherever it would wrap. So the layout does not follow parent; it computes the content area from the window size directly. When the window size is unknown
+    // (the hidden smoke copy) it falls back to the default 940×650.
     readonly property real contentW: (page.Window.width > 0 ? page.Window.width : theme.windowW)
                                      - theme.sideW - theme.contentPaddingH * 2
     readonly property real contentH: (page.Window.height > 0 ? page.Window.height : theme.windowH)
                                      - theme.titleBarH - theme.contentPaddingV - 24
     UiTheme { id: theme }
-    property string title: qsTr("安装完成")
-    property string description: qsTr("OrbbecSlicer 已准备就绪。")
-    property string primaryText: qsTr("立即启动")
+    property string title: qsTr("Installation complete")
+    property string description: qsTr("OrbbecSlicer is ready.")
+    property string primaryText: qsTr("Launch now")
     property bool showSecondary: false
     property string secondaryText: ""
     property bool launchEnabled: true
@@ -32,16 +32,16 @@ Item {
         height: page.contentH
         spacing: 0
 
-        // 评审稿 .complete-icon { margin: 34px auto 14px }——"34px" 是图标上方留白；整块随
-        // .complete-copy 在内容区里居中（上下两块 flex 留白相等），图标并不贴着页面顶部。
+        // Design mockup .complete-icon { margin: 34px auto 14px }—"34px" is the space above the icon; the whole
+        // block is centered with .complete-copy inside the content area (equal flex space above and below), so the icon does not hug the page top.
         Item { Layout.fillHeight: true }
         Item {
             Layout.alignment: Qt.AlignHCenter
-            implicitWidth: 70; implicitHeight: 70 + 14          // 14 = 投影向下溢出的高度
+            implicitWidth: 70; implicitHeight: 70 + 14          // 14 = height of the shadow overflowing downward
 
-            // box-shadow: 0 10px 24px rgba(15,143,136,.22)：矩形 + 高斯模糊，底下叠两层近似
-            // （模糊层再淡一点，边缘就不会是硬轮廓）。
-            // 阴影：越往外越淡的同心圆，圆心比图标低 10px（box-shadow 的 y 偏移）。
+            // box-shadow: 0 10px 24px rgba(15,143,136,.22): rectangle + Gaussian blur, approximated by stacking two layers underneath
+            // (the blur layer a bit fainter, so the edge is not a hard outline).
+            // Shadow: concentric circles that fade outward, center 10px below the icon (box-shadow's y offset).
             Repeater {
                 model: [
                     { "pad": 22, "dy": 12, "a": 0.04 },
@@ -97,7 +97,7 @@ Item {
 
         Item { Layout.fillHeight: true }
 
-        // 操作行贴底（评审稿 .setup-actions { margin-top:auto; padding-top:22px }）
+        // Action row pinned to the bottom (design mockup .setup-actions { margin-top:auto; padding-top:22px })
         RowLayout {
             Layout.fillWidth: true
             Layout.topMargin: 22

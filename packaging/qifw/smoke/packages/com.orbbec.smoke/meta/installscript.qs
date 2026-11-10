@@ -9,10 +9,10 @@ Component.prototype.createOperations = function()
 
     console.log("[smoke] installing " + component.name + " to " + installer.value("TargetDir"));
 
-    // 冒烟目标是让"安装 → 校验 → 卸载 → 校验清理"覆盖到快捷方式。
-    // 快捷方式指向 payload/README.txt（不存在就退化为打开安装目录），
-    // run-smoke.ps1 会在安装后断言它存在、卸载后断言它被删除。
-    // 注意：Windows 上 systemInfo.kernelType 的值是 "winnt"，不是 "win"
+    // The smoke goal is to have "install -> verify -> uninstall -> verify cleanup" cover the shortcut.
+    // The shortcut points to payload/README.txt (falls back to opening the install dir if missing);
+    // run-smoke.ps1 asserts it exists after install and is deleted after uninstall.
+    // Note: on Windows, systemInfo.kernelType is "winnt", not "win"
     var target = installer.value("TargetDir") + "\\payload\\README.txt";
     if (systemInfo.kernelType === "winnt") {
         component.addOperation("CreateShortcut", target,
@@ -20,6 +20,6 @@ Component.prototype.createOperations = function()
                                "workingDirectory=@TargetDir@");
     }
     else {
-        console.log("[smoke] 非 Windows 平台（" + systemInfo.kernelType + "），跳过快捷方式");
+        console.log("[smoke] non-Windows platform (" + systemInfo.kernelType + "), skipping shortcut");
     }
 }

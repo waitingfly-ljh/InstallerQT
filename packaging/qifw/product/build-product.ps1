@@ -1,38 +1,38 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-  把 OrbbecSlicer 的 staging 树打成 QIFW 离线安装程序，并生成 SHA-256 校验。
+  Package OrbbecSlicer's staging tree into a QIFW offline installer and generate a SHA-256 checksum.
 
 .DESCRIPTION
-  只读引用原项目的两个位置：
-    - <StageRoot>           产品 staging 树（默认 <UpstreamRepo>\build\presets\windows-release\OrbbecSlicer）
-    - <UpstreamRepo>\version.inc 的 set(SLICER_APP_VERSION "...")
+  Read-only references to two locations in the original project:
+    - <StageRoot>           product staging tree (default <UpstreamRepo>\build\presets\windows-release\OrbbecSlicer)
+    - set(SLICER_APP_VERSION "...") in <UpstreamRepo>\version.inc
 
-  本仓库的写入只有 out/product/<时间戳>/ 与 out/staging-work/<时间戳>/：
-    staging-work 是 staging 树的副本（QIFW 要求 packages/<id>/data/ 作为数据目录，
-    直接在原树上构建会要求在原项目里建目录，因此先复制再打包）。
+  This repo only writes out/product/<timestamp>/ and out/staging-work/<timestamp>/:
+    staging-work is a copy of the staging tree (QIFW requires packages/<id>/data/ as the data directory,
+    and building directly on the original tree would require creating directories in the original project, so copy first and then package).
 
-  步骤：
-    1. 解析版本（缺少版本来源 ⇒ 失败，不生成产物）
-    2. 对 staging 树做前后快照（文件数 + 内容摘要），不一致即中止
-    3. 生成 config.xml / package.xml（含图标、StartMenuDir、TargetDir）
-    4. binarycreator --offline-only 打包
-    5. 生成 <产物>.sha256，重新计算并比对
-    6. 静默安装到临时目录，逐文件比对安装结果与 staging（差异清单必须为空）
+  Steps:
+    1. Resolve the version (missing version source => failure, no artifact produced)
+    2. Snapshot the staging tree before and after (file count + content digest); abort on any mismatch
+    3. Generate config.xml / package.xml (including icon, StartMenuDir, TargetDir)
+    4. Package with binarycreator --offline-only
+    5. Generate <artifact>.sha256, recompute and compare
+    6. Silent install into a temp directory and compare each installed file against staging (the diff list must be empty)
 
 .PARAMETER StageRoot
-  staging 树路径。必须是绝对路径且存在；只读。
-  留空（默认）时解析为 <UpstreamRepo>\build\presets\windows-release\OrbbecSlicer，
-  即原项目 CMake preset 的安装产物（原项目已不再提供 packaging\windows\dist）。
+  Staging tree path. Must be absolute and exist; read-only.
+  Empty (default) resolves to <UpstreamRepo>\build\presets\windows-release\OrbbecSlicer,
+  i.e. the CMake preset install output of the original project.
 
 .PARAMETER UpstreamRepo
-  原项目根（用于读 version.inc）。只读。
+  Original project root (used to read version.inc). Read-only.
 
 .PARAMETER Compression
-  binarycreator --ac 级别，只接受 0/1/3/5/7/9，默认 5。
+  binarycreator --ac level; only 0/1/3/5/7/9 accepted, default 5.
 
 .PARAMETER SkipInstallVerify
-  跳过第 6 步（安装后逐文件比对）。528 MB / 1.3 万文件时该步骤耗时较长。
+  Skip step 6 (per-file comparison after install). This step takes a long time for 528 MB / 13k files.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\packaging\qifw\product\build-product.ps1
@@ -40,19 +40,19 @@
 #>
 [CmdletBinding()]
 param(
-    # 留空 ⇒ <UpstreamRepo>\build\presets\windows-release\OrbbecSlicer（在下方解析）
+    # Empty => <UpstreamRepo>\build\presets\windows-release\OrbbecSlicer (resolved below).
     [string]$StageRoot = '',
     [string]$UpstreamRepo = 'D:\Orbbec\orbbecslicer',
     [ValidateSet(0, 1, 3, 5, 7, 9)][int]$Compression = 5,
     [string]$ArchiveFormat = '7z',
     [switch]$SkipInstallVerify,
-    # 8.4：不构建外壳，直接交付 QIFW 原生包（deliverable = "qifw-native"）。
+    # 8.4: do not build the shell; deliver the QIFW native package directly (deliverable = "qifw-native").
     [switch]$WithoutSetupUi
 )
 
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'toolchain\_common.ps1')
 
-# 子进程与日志统一 UTF-8，避免其它工具把中文读成乱码
+# Unify child processes and logs to UTF-8 so other tools don't misread Chinese as mojibake
 $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 
@@ -62,7 +62,7 @@ $IfwBin = Join-Path (Resolve-RepoPath -RelativePath $Manifest.ifw.installDir -Re
 $binarycreator = Join-Path $IfwBin 'binarycreator.exe'
 $installerbase = Join-Path $IfwBin 'installerbase.exe'
 
-# 默认 staging = 原项目 CMake preset 的安装产物（原项目已删除 packaging\windows\dist）
+# Default staging = the original project's CMake preset install output (repo no longer ships packaging\windows\dist)
 if ([string]::IsNullOrWhiteSpace($StageRoot)) {
     $StageRoot = Join-Path $UpstreamRepo 'build\presets\windows-release\OrbbecSlicer'
 }
@@ -85,8 +85,8 @@ function Write-Both {
 function Add-Step {
     param([string]$Name, [bool]$Ok, [string]$Detail, [double]$Seconds = 0)
     $steps.Add([pscustomobject]@{ Step = $Name; Ok = $Ok; Detail = $Detail; Seconds = [math]::Round($Seconds, 2) })
-    if ($Ok) { Write-Both ("{0} 完成（{1}s）" -f $Name, [math]::Round($Seconds, 2)) 'OK' }
-    else { Write-Both ("{0} 失败：{1}" -f $Name, $Detail) 'ERROR'; $failures.Add("${Name}: $Detail") }
+    if ($Ok) { Write-Both ("{0} done ({1}s)" -f $Name, [math]::Round($Seconds, 2)) 'OK' }
+    else { Write-Both ("{0} failed: {1}" -f $Name, $Detail) 'ERROR'; $failures.Add("${Name}: $Detail") }
 }
 
 function Exit-Fail {
@@ -97,7 +97,7 @@ function Exit-Fail {
 }
 
 function Get-TreeDigest {
-    <# 对目录做内容摘要：按相对路径排序后逐个累加 SHA-256，最后取整体 SHA-256。只读。 #>
+    <# Compute a content digest of a directory: sort by relative path, accumulate each file's SHA-256, then take the overall SHA-256. Read-only. #>
     param([Parameter(Mandatory)][string]$Path)
     $sb = New-Object System.Text.StringBuilder
     $files = Get-ChildItem -LiteralPath $Path -Recurse -File -Force | Sort-Object FullName
@@ -117,7 +117,7 @@ function Get-TreeDigest {
 }
 
 function Get-ChangedFileList {
-    <# 对比打包前明细与给定目录，列出 删除/大小变化/内容变化/新增 的文件（相对 staging 的路径）。只读。 #>
+    <# Compare the pre-packaging detail against the given directory and list deleted/size-changed/content-changed/added files (paths relative to staging). Read-only. #>
     param([Parameter(Mandatory)][string]$Dir, [Parameter(Mandatory)][hashtable]$Before, [Parameter(Mandatory)][string]$BeforeRoot)
     $out = New-Object System.Collections.Generic.List[string]
     $now = @{ }
@@ -126,94 +126,94 @@ function Get-ChangedFileList {
     }
     foreach ($p in $Before.Keys) {
         $rel = $p.Substring($BeforeRoot.Length).TrimStart('\')
-        if (-not $now.ContainsKey($rel)) { $out.Add("删除 $($rel -replace '\\', '/')"); continue }
+        if (-not $now.ContainsKey($rel)) { $out.Add("deleted $($rel -replace '\\', '/')"); continue }
         $f = $now[$rel]
-        if ($f.Length -ne $Before[$p].Size) { $out.Add("大小变化 $($rel -replace '\\', '/')"); continue }
+        if ($f.Length -ne $Before[$p].Size) { $out.Add("size changed $($rel -replace '\\', '/')"); continue }
         $h = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLower()
-        if ($h -ne $Before[$p].Hash) { $out.Add("内容变化 $($rel -replace '\\', '/')") }
+        if ($h -ne $Before[$p].Hash) { $out.Add("content changed $($rel -replace '\\', '/')") }
     }
     foreach ($rel in $now.Keys) {
-        if (-not $Before.ContainsKey((Join-Path $BeforeRoot $rel))) { $out.Add("新增 $($rel -replace '\\', '/')") }
+        if (-not $Before.ContainsKey((Join-Path $BeforeRoot $rel))) { $out.Add("added $($rel -replace '\\', '/')") }
     }
     return , $out
 }
 
-Write-Both "仓库根: $RepoRoot" 'INFO'
+Write-Both "Repo root: $RepoRoot" 'INFO'
 Write-Both "staging: $StageRoot" 'INFO'
-Write-Both "输出: $OutDir" 'INFO'
+Write-Both "Output: $OutDir" 'INFO'
 
-# --- 0. 前置（含工具链登记门禁）--------------------------------------------
+# --- 0. Preconditions (including toolchain registration gate)--------------------------------------------
 foreach ($exe in @($binarycreator, $installerbase)) {
-    if (-not (Test-Path -LiteralPath $exe)) { Exit-Fail "缺少 $exe；先运行 toolchain\install-toolchain.ps1" }
+    if (-not (Test-Path -LiteralPath $exe)) { Exit-Fail "Missing $exe; run toolchain\install-toolchain.ps1 first" }
 }
-if (-not (Test-Path -LiteralPath $StageRoot)) { Exit-Fail "staging 树不存在: $StageRoot" }
-if (-not [System.IO.Path]::IsPathRooted($StageRoot)) { Exit-Fail "StageRoot 必须是绝对路径: $StageRoot" }
+if (-not (Test-Path -LiteralPath $StageRoot)) { Exit-Fail "Staging tree does not exist: $StageRoot" }
+if (-not [System.IO.Path]::IsPathRooted($StageRoot)) { Exit-Fail "StageRoot must be an absolute path: $StageRoot" }
 
-# 构建只认 manifest 登记的工具链：版本与登记值不符、或工具缺失即中止（不放行"能用就行"）
-Write-Both '== 0. 工具链登记核对 ==' 'STEP'
+# The build only accepts the toolchain registered in the manifest: abort if the version differs from the registered value or a tool is missing (no "good enough to work" exceptions)
+Write-Both '== 0. Toolchain registration check ==' 'STEP'
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $toolchain = Get-QifwToolchainStatus -Manifest $Manifest -RepoRoot $RepoRoot
 $sw.Stop()
-Add-Step '工具链核对' $toolchain.Available (
-    "Qt $($toolchain.QtVersion) $($toolchain.Architecture) / QIFW $($toolchain.IfwVersion)（清单 sha256 $($toolchain.ArchiveSha256)）" +
-    $(if ($toolchain.Reason) { " | 不可用: $($toolchain.Reason)" } else { '' })) $sw.Elapsed.TotalSeconds
-if ($toolchain.Warning) { Write-Both "可选缺失（不阻断）: $($toolchain.Warning)" 'WARN' }
-if (-not $toolchain.Available) { Exit-Fail '工具链与 manifest 登记不一致，已中止（不打默认版本、不换路径凑合）' }
+Add-Step 'Toolchain check' $toolchain.Available (
+    "Qt $($toolchain.QtVersion) $($toolchain.Architecture) / QIFW $($toolchain.IfwVersion) (manifest sha256 $($toolchain.ArchiveSha256))" +
+    $(if ($toolchain.Reason) { " | unavailable: $($toolchain.Reason)" } else { '' })) $sw.Elapsed.TotalSeconds
+if ($toolchain.Warning) { Write-Both "Optional missing (non-blocking): $($toolchain.Warning)" 'WARN' }
+if (-not $toolchain.Available) { Exit-Fail 'Toolchain does not match the manifest registration; aborted (no default version, no path substitution)' }
 
-# --- 1. 版本（5.1）--------------------------------------------------------
-Write-Both '== 1. 解析版本 ==' 'STEP'
+# --- 1. Version (5.1)--------------------------------------------------------
+Write-Both '== 1. Resolve version ==' 'STEP'
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $versionInc = Join-Path $UpstreamRepo 'version.inc'
 if (-not (Test-Path -LiteralPath $versionInc)) {
-    Exit-Fail "找不到版本来源: $versionInc（不使用硬编码默认版本）"
+    Exit-Fail "Version source not found: $versionInc (no hard-coded default version)"
 }
-# 锚定行首的 set(SLICER_APP_VERSION "x")，避免误匹配 SLICER_APP_VERSION_MATCH 之类的派生行
+# Anchor to line-start set(SLICER_APP_VERSION "x") to avoid accidentally matching derived lines like SLICER_APP_VERSION_MATCH
 $versionLine = Select-String -Path $versionInc -Pattern '^\s*set\(\s*SLICER_APP_VERSION\s+"([^"]+)"\s*\)' |
     Select-Object -First 1
-if (-not $versionLine) { Exit-Fail "version.inc 中未找到 set(SLICER_APP_VERSION \"...\"): $versionInc" }
+if (-not $versionLine) { Exit-Fail "set(SLICER_APP_VERSION \"...\") not found in version.inc: $versionInc" }
 $appVersion = $versionLine.Matches[0].Groups[1].Value.Trim()
 $sw.Stop()
-Add-Step '解析版本' ($appVersion -ne '') "SLICER_APP_VERSION=$appVersion（$versionInc 第 $($versionLine.LineNumber) 行，只读）" $sw.Elapsed.TotalSeconds
+Add-Step 'Resolve version' ($appVersion -ne '') "SLICER_APP_VERSION=$appVersion (line $($versionLine.LineNumber) of $versionInc, read-only)" $sw.Elapsed.TotalSeconds
 
 $productName = 'OrbbecSlicer'
 $componentId = 'com.orbbec.orbbecslicer'
 $archTag = 'x64'
-# 产物名：产品名-版本-架构-Installer.exe；版本里允许 -beta.N
+# Artifact name: product-version-arch-Installer.exe; -beta.N is allowed in the version
 $installerName = "{0}-{1}-{2}-Installer.exe" -f $productName, $appVersion, $archTag
-if ($installerName -notmatch '^[A-Za-z0-9._-]+\.exe$') { Exit-Fail "产物名含非法字符: $installerName" }
+if ($installerName -notmatch '^[A-Za-z0-9._-]+\.exe$') { Exit-Fail "Artifact name contains invalid characters: $installerName" }
 $installerPath = Join-Path $OutDir $installerName
 
-# --- 2. 打包前快照（5.2）--------------------------------------------------
-Write-Both '== 2. staging 树快照（打包前）==' 'STEP'
+# --- 2. Pre-packaging snapshot (5.2)--------------------------------------------------
+Write-Both '== 2. staging tree snapshot (before packaging) ==' 'STEP'
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $snapBefore = Get-TreeDigest -Path $StageRoot
 $sw.Stop()
-Add-Step '快照（前）' $true ("{0} 文件 / {1:N0} B / {2}" -f $snapBefore.FileCount, $snapBefore.TotalBytes, $snapBefore.Digest) $sw.Elapsed.TotalSeconds
-# 逐文件明细用于打包后定位"改动的是哪个文件"（快照本身不进 result.json，太大）
+Add-Step 'Snapshot (before)' $true ("{0} files / {1:N0} B / {2}" -f $snapBefore.FileCount, $snapBefore.TotalBytes, $snapBefore.Digest) $sw.Elapsed.TotalSeconds
+# Per-file detail is used after packaging to locate "which file changed" (the snapshot itself is not written to result.json, too large)
 $filesBefore = @{}
 foreach ($f in (Get-ChildItem -LiteralPath $StageRoot -Recurse -File -Force)) {
     $filesBefore[$f.FullName] = [pscustomobject]@{ Size = $f.Length; Hash = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLower() }
 }
 
-# --- 3. 装配 packages（5.2）------------------------------------------------
-Write-Both '== 3. 复制 staging 到 packages/<id>/data ==' 'STEP'
+# --- 3. Assemble packages (5.2)------------------------------------------------
+Write-Both '== 3. Copy staging to packages/<id>/data ==' 'STEP'
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $packagesDir = Join-Path $WorkRoot 'packages'
 $pkgDir = Join-Path $packagesDir $componentId
 $metaDir = Join-Path $pkgDir 'meta'
 $dataDir = Join-Path $pkgDir 'data'
 $configDir = Join-Path $WorkRoot 'config'
-# 先建 data/ 再复制：打包后它才是已存在目录，Get-TreeDigest 才能对它做校验
+# Create data/ before copying: after packaging it must be an existing directory so Get-TreeDigest can verify it
 New-Item -ItemType Directory -Force -Path $dataDir, $metaDir, $configDir | Out-Null
-# robocopy 比 Copy-Item 快得多，且 /MIR 保证 data/ 与 staging 完全一致
+# robocopy is much faster than Copy-Item, and /MIR guarantees data/ exactly matches staging
 $rc = Invoke-Native -FilePath 'robocopy.exe' -ArgumentList @($StageRoot, $dataDir, '/MIR', '/NFL', '/NDL', '/NJH', '/NJS', '/NP', '/R:2', '/W:1') -LogPath $LogPath
-# robocopy: 0-7 为成功
-if ($rc.ExitCode -gt 7) { Exit-Fail "robocopy 复制 staging 失败 (exit $($rc.ExitCode))" }
+# robocopy: 0-7 means success
+if ($rc.ExitCode -gt 7) { Exit-Fail "robocopy failed to copy staging (exit $($rc.ExitCode))" }
 $sw.Stop()
 $copied = Get-ChildItem -LiteralPath $dataDir -Recurse -File -Force
-Add-Step '复制 staging' ($copied.Count -eq $snapBefore.FileCount) ("{0} 文件（源 {1}）" -f $copied.Count, $snapBefore.FileCount) $sw.Elapsed.TotalSeconds
+Add-Step 'Copy staging' ($copied.Count -eq $snapBefore.FileCount) ("{0} files (source {1})" -f $copied.Count, $snapBefore.FileCount) $sw.Elapsed.TotalSeconds
 
-# 图标从 staging 树里取（只读），拷进 config/ 供 installerbase 使用
+# Take the icon from the staging tree (read-only) and copy it into config/ for installerbase to use
 $iconSrc = Join-Path $StageRoot 'resources\images\app_logo.ico'
 $iconName = ''
 if (Test-Path -LiteralPath $iconSrc) {
@@ -232,7 +232,7 @@ $configXml = @"
     <Publisher>Orbbec</Publisher>
     <StartMenuDir>$productName</StartMenuDir>
     <TargetDir>@ApplicationsDir@/$productName</TargetDir>
-$iconXml    <!-- 离线安装器：不配置 RemoteRepositories -->
+$iconXml    <!-- Offline installer: no RemoteRepositories configured -->
     <AllowNonAsciiCharacters>true</AllowNonAsciiCharacters>
     <AllowSpaceInPath>true</AllowSpaceInPath>
 </Installer>
@@ -244,7 +244,7 @@ $packageXml = @"
 <?xml version="1.0" encoding="UTF-8"?>
 <Package>
     <DisplayName>$productName</DisplayName>
-    <Description>$productName 桌面应用（含 OCCT 与运行时 DLL）。</Description>
+    <Description>$productName desktop application (includes OCCT and runtime DLLs).</Description>
     <Version>$appVersion</Version>
     <ReleaseDate>$(Get-Date -Format 'yyyy-MM-dd')</ReleaseDate>
     <Name>$componentId</Name>
@@ -253,10 +253,10 @@ $packageXml = @"
 </Package>
 "@
 [System.IO.File]::WriteAllText($packageXmlPath, $packageXml, (New-Object System.Text.UTF8Encoding($false)))
-Write-Both "config.xml / package.xml 已生成（图标: $(if ($iconName) { 'app_logo.ico' } else { '无' })）" 'INFO'
+Write-Both "config.xml / package.xml generated (icon: $(if ($iconName) { 'app_logo.ico' } else { 'none' }))" 'INFO'
 
-# --- 4. 打包（5.3）--------------------------------------------------------
-Write-Both '== 4. binarycreator 打包 ==' 'STEP'
+# --- 4. Package (5.3)--------------------------------------------------------
+Write-Both '== 4. binarycreator packaging ==' 'STEP'
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $r = Invoke-Native -FilePath $binarycreator -ArgumentList @(
     '--offline-only', '-c', $configXmlPath, '-p', $packagesDir, '-t', $installerbase,
@@ -264,13 +264,13 @@ $r = Invoke-Native -FilePath $binarycreator -ArgumentList @(
 ) -LogPath $LogPath
 $sw.Stop()
 $built = Test-Path -LiteralPath $installerPath
-Add-Step '打包' ($r.ExitCode -eq 0 -and $built) "exit=$($r.ExitCode), 产物=$(if ($built) { "{0:N0} B" -f (Get-Item $installerPath).Length } else { '不存在' })" $sw.Elapsed.TotalSeconds
-if (-not ($r.ExitCode -eq 0 -and $built)) { Exit-Fail '打包失败' }
+Add-Step 'Package' ($r.ExitCode -eq 0 -and $built) "exit=$($r.ExitCode), artifact=$(if ($built) { "{0:N0} B" -f (Get-Item $installerPath).Length } else { 'does not exist' })" $sw.Elapsed.TotalSeconds
+if (-not ($r.ExitCode -eq 0 -and $built)) { Exit-Fail 'Packaging failed' }
 $installerBytes = (Get-Item -LiteralPath $installerPath).Length
 $buildSeconds = [math]::Round($sw.Elapsed.TotalSeconds, 2)
 
-# --- 5. 打包后快照（5.2）--------------------------------------------------
-Write-Both '== 5. staging 树快照（打包后）==' 'STEP'
+# --- 5. Post-packaging snapshot (5.2)--------------------------------------------------
+Write-Both '== 5. staging tree snapshot (after packaging) ==' 'STEP'
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $snapAfter = Get-TreeDigest -Path $StageRoot
 $same = ($snapBefore.FileCount -eq $snapAfter.FileCount) -and
@@ -278,26 +278,26 @@ $same = ($snapBefore.FileCount -eq $snapAfter.FileCount) -and
         ($snapBefore.Digest -eq $snapAfter.Digest)
 if ($same) {
     $sw.Stop()
-    Add-Step '快照（后）并比对' $true ("{0} 文件 / {1:N0} B / {2}" -f $snapAfter.FileCount, $snapAfter.TotalBytes, $snapAfter.Digest) $sw.Elapsed.TotalSeconds
+    Add-Step 'Snapshot (after) and compare' $true ("{0} files / {1:N0} B / {2}" -f $snapAfter.FileCount, $snapAfter.TotalBytes, $snapAfter.Digest) $sw.Elapsed.TotalSeconds
 }
 else {
-    # 指出具体被改动的文件：新增 / 删除 / 大小或内容变化
+    # Point out the specific changed files: added / deleted / size or content changed
     $changed = Get-ChangedFileList -Dir $StageRoot -Before $filesBefore -BeforeRoot $StageRoot
     $sw.Stop()
     $changedPath = Join-Path $OutDir 'staging-changes.txt'
     $changed | Set-Content -LiteralPath $changedPath -Encoding UTF8
     Remove-Item -LiteralPath $installerPath, "$installerPath.sha256" -Force -ErrorAction SilentlyContinue
-    Add-Step '快照（后）并比对' $false ("{0} 文件 / {1:N0} B / {2}；改动 {3} 项{4}（清单 {5}）" -f `
+    Add-Step 'Snapshot (after) and compare' $false ("{0} files / {1:N0} B / {2}; {3} changed item(s){4} (list {5})" -f `
             $snapAfter.FileCount, $snapAfter.TotalBytes, $snapAfter.Digest, $changed.Count,
         $(if ($changed.Count) { ': ' + (($changed | Select-Object -First 10) -join '; ') } else { '' }), $changedPath) $sw.Elapsed.TotalSeconds
-    Exit-Fail 'staging 树在打包前后发生变化（脚本不应写入原项目），已中止；产物作废，请先查明改动来源'
+    Exit-Fail 'Staging tree changed between before and after packaging (the script must not write to the original project); aborted; artifact discarded, find the source of the change first'
 }
 
-# --- 5b. 工作副本核对 -------------------------------------------------------
-# packages/ 里那份 data/ 才是真正进产物的内容，staging 没变不代表它没变。
-# 复制完成到打包结束之间若被改动（或复制本身出错），产物内容就与 staging 不符，
-# 必须按「输入树被意外改动」同样处理：非零退出、指出文件、作废产物。
-Write-Both '== 5b. 工作副本 data/ 核对 ==' 'STEP'
+# --- 5b. Working copy check -------------------------------------------------------
+# The data/ under packages/ is what actually goes into the artifact; staging not changing does not mean it did not change.
+# If it changes between the copy finishing and packaging ending (or the copy itself is wrong), the artifact content will not match staging,
+# and it must be handled the same as "input tree accidentally modified": non-zero exit, point out the files, discard the artifact.
+Write-Both '== 5b. Working copy data/ check ==' 'STEP'
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $snapWork = Get-TreeDigest -Path $dataDir
 $sameWork = ($snapWork.FileCount -eq $snapBefore.FileCount) -and
@@ -305,47 +305,47 @@ $sameWork = ($snapWork.FileCount -eq $snapBefore.FileCount) -and
             ($snapWork.Digest -eq $snapBefore.Digest)
 if ($sameWork) {
     $sw.Stop()
-    Add-Step '工作副本核对' $true ("{0} 文件 / {1:N0} B / {2}（与 staging 一致）" -f $snapWork.FileCount, $snapWork.TotalBytes, $snapWork.Digest) $sw.Elapsed.TotalSeconds
+    Add-Step 'Working copy check' $true ("{0} files / {1:N0} B / {2} (matches staging)" -f $snapWork.FileCount, $snapWork.TotalBytes, $snapWork.Digest) $sw.Elapsed.TotalSeconds
 }
 else {
     $workChanged = Get-ChangedFileList -Dir $dataDir -Before $filesBefore -BeforeRoot $StageRoot
     $sw.Stop()
     $changedPath = Join-Path $OutDir 'staging-changes.txt'
     $workChanged | Set-Content -LiteralPath $changedPath -Encoding UTF8
-    Add-Step '工作副本核对' $false ("{0} 文件 / {1:N0} B / {2}；与 staging 差异 {3} 项{4}（清单 {5}）" -f `
+    Add-Step 'Working copy check' $false ("{0} files / {1:N0} B / {2}; {3} difference(s) from staging{4} (list {5})" -f `
             $snapWork.FileCount, $snapWork.TotalBytes, $snapWork.Digest, $workChanged.Count,
         $(if ($workChanged.Count) { ': ' + (($workChanged | Select-Object -First 10) -join '; ') } else { '' }), $changedPath) $sw.Elapsed.TotalSeconds
-    # 作废本次产物与校验文件，避免"退出非零但 exe 还在、被误拿去发布"
+    # Discard this artifact and checksum file so "exit non-zero but the exe is still there and gets published by mistake" cannot happen
     Remove-Item -LiteralPath $installerPath, "$installerPath.sha256" -Force -ErrorAction SilentlyContinue
-    Exit-Fail '工作副本 data/ 在打包过程中被改动，产物已作废；请查明改动来源后重跑'
+    Exit-Fail 'Working copy data/ was modified during packaging; artifact discarded; find the source of the change and rerun'
 }
 
-# --- 6. SHA-256（5.4）-----------------------------------------------------
-Write-Both '== 6. 生成并复核 SHA-256 ==' 'STEP'
+# --- 6. SHA-256 (5.4)-----------------------------------------------------
+Write-Both '== 6. Generate and verify SHA-256 ==' 'STEP'
 $sha1 = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLower()
 $shaFile = "$installerPath.sha256"
-# 与 Qt 官方 .sha256 相同的格式：<hash> *<文件名>
+# Same format as the official Qt .sha256: <hash> *<file name>
 [System.IO.File]::WriteAllText($shaFile, "$sha1 *$installerName`n", (New-Object System.Text.ASCIIEncoding))
 $recomputed = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLower()
 $fromFile = (Get-Content -LiteralPath $shaFile -Raw).Split(' ')[0].Trim().ToLower()
-Add-Step 'SHA-256' ($sha1 -eq $recomputed -and $sha1 -eq $fromFile) ("$sha1（文件 $shaFile）")
+Add-Step 'SHA-256' ($sha1 -eq $recomputed -and $sha1 -eq $fromFile) ("$sha1 (file $shaFile)")
 $nameOk = ($installerName -match [regex]::Escape($productName)) -and ($installerName -match [regex]::Escape($appVersion)) -and ($installerName -match [regex]::Escape($archTag))
-Add-Step '产物命名' $nameOk $installerName
+Add-Step 'Artifact naming' $nameOk $installerName
 
-# --- 6b. 构建外壳（8.1）与合成交付物（8.2）---------------------------------
+# --- 6b. Build shell (8.1) and assemble deliverable (8.2)---------------------------------
 $setupPath = $null
 $setupName = $null
 $setupBytes = 0
 if ($WithoutSetupUi) {
-    Write-Both '按要求跳过外壳（-WithoutSetupUi）：交付 QIFW 原生包' 'WARN'
+    Write-Both 'Skipping the shell as requested (-WithoutSetupUi): delivering the QIFW native package' 'WARN'
     $deliverable = 'qifw-native'
 } else {
-    Write-Both '== 6b. 构建安装器外壳 ==' 'STEP'
+    Write-Both '== 6b. Build installer shell ==' 'STEP'
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     $shellScript = Join-Path $RepoRoot 'packaging\qifw\setup-ui\build-setup.ps1'
     if (-not (Test-Path -LiteralPath $shellScript)) {
-        Add-Step '构建外壳' $false "找不到 build-setup.ps1: $shellScript" 0
-        Exit-Fail '外壳源码不完整，已中止（不产出 Setup.exe）'
+        Add-Step 'Build shell' $false "build-setup.ps1 not found: $shellScript" 0
+        Exit-Fail 'Shell source incomplete; aborted (no Setup.exe produced)'
     }
     $r = Invoke-Native -FilePath 'powershell.exe' -ArgumentList @(
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $shellScript,
@@ -354,13 +354,13 @@ if ($WithoutSetupUi) {
     $sw.Stop()
     $shellExe = Join-Path $RepoRoot 'packaging\qifw\setup-ui\dist\OrbbecSlicerSetup.exe'
     $shellOk = ($r.ExitCode -eq 0) -and (Test-Path -LiteralPath $shellExe)
-    Add-Step '构建外壳' $shellOk "exit=$($r.ExitCode), exe=$(if ($shellOk) { "{0:N0} B" -f (Get-Item $shellExe).Length } else { '不存在' })" $sw.Elapsed.TotalSeconds
+    Add-Step 'Build shell' $shellOk "exit=$($r.ExitCode), exe=$(if ($shellOk) { "{0:N0} B" -f (Get-Item $shellExe).Length } else { 'does not exist' })" $sw.Elapsed.TotalSeconds
     if (-not $shellOk) {
-        # 外壳构建失败：默认中止，且不产出 Setup.exe（Installer.exe 作为中间产物保留）。
-        Exit-Fail "外壳构建失败（日志见 $LogPath）"
+        # Shell build failed: abort by default and do not produce Setup.exe (Installer.exe is kept as an intermediate artifact).
+        Exit-Fail "Shell build failed (see log: $LogPath)"
     }
 
-    Write-Both '== 6c. 合成单文件 Setup.exe ==' 'STEP'
+    Write-Both '== 6c. Assemble single-file Setup.exe ==' 'STEP'
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     $setupName = "{0}-{1}-{2}-Setup.exe" -f $productName, $appVersion, $archTag
     $setupPath = Join-Path $OutDir $setupName
@@ -369,12 +369,12 @@ if ($WithoutSetupUi) {
     $uninstallerExe = Join-Path $RepoRoot 'packaging\qifw\setup-ui\build\OrbbecSlicerUninstaller.exe'
     $uiDir = Join-Path $RepoRoot 'packaging\qifw\setup-ui\dist'
     if (-not (Test-Path -LiteralPath $launcherExe)) {
-        Add-Step '合成交付物' $false "找不到启动器: $launcherExe" 0
-        Exit-Fail '启动器缺失，已中止（不产出 Setup.exe）'
+        Add-Step 'Assemble deliverable' $false "Launcher not found: $launcherExe" 0
+        Exit-Fail 'Launcher missing; aborted (no Setup.exe produced)'
     }
     if (-not (Test-Path -LiteralPath $uninstallerExe)) {
-        Add-Step '合成交付物' $false "找不到卸载器: $uninstallerExe" 0
-        Exit-Fail '卸载器缺失，已中止（不产出 Setup.exe）'
+        Add-Step 'Assemble deliverable' $false "Uninstaller not found: $uninstallerExe" 0
+        Exit-Fail 'Uninstaller missing; aborted (no Setup.exe produced)'
     }
     $r = Invoke-Native -FilePath 'powershell.exe' -ArgumentList @(
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $packScript,
@@ -385,33 +385,33 @@ if ($WithoutSetupUi) {
     $sw.Stop()
     $setupOk = ($r.ExitCode -eq 0) -and (Test-Path -LiteralPath $setupPath)
     if ($setupOk) { $setupBytes = (Get-Item -LiteralPath $setupPath).Length }
-    Add-Step '合成交付物' $setupOk "exit=$($r.ExitCode), 产物=$(if ($setupOk) { "{0:N0} B" -f $setupBytes } else { '不存在' })" $sw.Elapsed.TotalSeconds
+    Add-Step 'Assemble deliverable' $setupOk "exit=$($r.ExitCode), artifact=$(if ($setupOk) { "{0:N0} B" -f $setupBytes } else { 'does not exist' })" $sw.Elapsed.TotalSeconds
     if (-not $setupOk) {
         Remove-Item -LiteralPath $setupPath, "$setupPath.sha256" -Force -ErrorAction SilentlyContinue
-        Exit-Fail "合成 Setup.exe 失败（日志见 $LogPath）"
+        Exit-Fail "Failed to assemble Setup.exe (see log: $LogPath)"
     }
     $setupSha = (Get-FileHash -LiteralPath $setupPath -Algorithm SHA256).Hash.ToLower()
     [System.IO.File]::WriteAllText("$setupPath.sha256", "$setupSha *$setupName`n", (New-Object System.Text.ASCIIEncoding))
     $deliverable = 'setup-shell'
-    Write-Both ("交付物: {0} = {1:N0} B（Installer {2:N0} B，差值 {3:N0} B）" -f `
+    Write-Both ("Deliverable: {0} = {1:N0} B (Installer {2:N0} B, difference {3:N0} B)" -f `
             $setupName, $setupBytes, $installerBytes, ($setupBytes - $installerBytes)) 'INFO'
 }
 
-# --- 7. 安装后逐文件比对（5.3）--------------------------------------------
+# --- 7. Per-file comparison after install (5.3)--------------------------------------------
 $installSeconds = 0
 $installOk = $null
 $diffCount = $null
 $uninstallSeconds = 0
 if ($SkipInstallVerify) {
-    Write-Both '按要求跳过安装后逐文件比对（-SkipInstallVerify）' 'WARN'
+    Write-Both 'Skipping per-file comparison after install as requested (-SkipInstallVerify)' 'WARN'
 }
 else {
-    Write-Both '== 7. 静默安装并逐文件比对 ==' 'STEP'
+    Write-Both '== 7. Silent install and per-file comparison ==' 'STEP'
     $instDir = Join-Path $OutDir 'install'
     $cacheDir = Join-Path $OutDir 'cache'
     New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
-    # 原生安装偶尔会被外部进程（安全软件/资源扫描）在解压途中终止：exit=-1、
-    # 安装目录缺文件、maintenancetool.exe 没写出来。清理目标目录后重试一次。
+    # Native install is occasionally killed mid-extraction by an external process (security software / resource scanner): exit=-1,
+    # missing files in the install directory, maintenancetool.exe not written. Clean the target directory and retry once.
     $installComplete = $false
     $installAttempts = 0
     while (-not $installComplete -and $installAttempts -lt 2) {
@@ -429,28 +429,28 @@ else {
         $installSeconds += [math]::Round($sw.Elapsed.TotalSeconds, 2)
         $installComplete = ($r.ExitCode -eq 0) -and (Test-Path -LiteralPath (Join-Path $instDir 'maintenancetool.exe'))
         if (-not $installComplete -and $installAttempts -lt 2) {
-            Write-Both "静默安装未完成（exit=$($r.ExitCode)），清理目标目录后重试一次" 'WARN'
+            Write-Both "Silent install incomplete (exit=$($r.ExitCode)); cleaning the target directory and retrying once" 'WARN'
         }
     }
-    Add-Step '静默安装' $installComplete "exit=$($r.ExitCode)，尝试 $installAttempts 次" $installSeconds
+    Add-Step 'Silent install' $installComplete "exit=$($r.ExitCode), $installAttempts attempt(s)" $installSeconds
 
-    Write-Both '== 8. 差异清单 ==' 'STEP'
+    Write-Both '== 8. Diff list ==' 'STEP'
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     $diff = New-Object System.Collections.Generic.List[string]
     $stageFiles = Get-ChildItem -LiteralPath $StageRoot -Recurse -File -Force
     foreach ($f in $stageFiles) {
         $rel = $f.FullName.Substring($StageRoot.Length).TrimStart('\')
         $t = Join-Path $instDir $rel
-        if (-not (Test-Path -LiteralPath $t)) { $diff.Add("缺失 $rel"); continue }
-        if ((Get-Item -LiteralPath $t).Length -ne $f.Length) { $diff.Add("大小不符 $rel"); continue }
+        if (-not (Test-Path -LiteralPath $t)) { $diff.Add("missing $rel"); continue }
+        if ((Get-Item -LiteralPath $t).Length -ne $f.Length) { $diff.Add("size mismatch $rel"); continue }
     }
     $sw.Stop()
     $diffCount = $diff.Count
-    Add-Step '差异清单' ($diff.Count -eq 0) ($(if ($diff.Count) { "差异 $($diff.Count) 项，前 10: " + (($diff | Select-Object -First 10) -join '; ') } else { "新增 $(@(Get-ChildItem -LiteralPath $instDir -Recurse -File -Force).Count - $stageFiles.Count) 个安装器自身文件，staging 侧 $($stageFiles.Count) 个文件全部就位" })) $sw.Elapsed.TotalSeconds
+    Add-Step 'Diff list' ($diff.Count -eq 0) ($(if ($diff.Count) { "$($diff.Count) difference(s), first 10: " + (($diff | Select-Object -First 10) -join '; ') } else { "$(@(Get-ChildItem -LiteralPath $instDir -Recurse -File -Force).Count - $stageFiles.Count) installer's own file(s) added, all $($stageFiles.Count) staging files in place" })) $sw.Elapsed.TotalSeconds
     $diff | Set-Content -LiteralPath (Join-Path $OutDir 'install-diff.txt') -Encoding UTF8
     $installOk = ($diff.Count -eq 0) -and $installComplete
 
-    Write-Both '== 9. 卸载 ==' 'STEP'
+    Write-Both '== 9. Uninstall ==' 'STEP'
     $mt = Join-Path $instDir 'maintenancetool.exe'
     if (Test-Path -LiteralPath $mt) {
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -459,9 +459,9 @@ else {
         ) -LogPath $LogPath
         $sw.Stop()
         $uninstallSeconds = [math]::Round($sw.Elapsed.TotalSeconds, 2)
-        # QIFW 的 pr 删不掉正在运行的 maintenancetool.exe，原生回路必然残留元数据，
-        # 因此这里只断言退出码，并把残留清单落盘供诊断；"目录整体不存在"的强断言放在
-        # 9c 的外壳回路（由外壳在子进程退出后补删）。
+        # QIFW's pr cannot delete the running maintenancetool.exe, so the native loop always leaves metadata behind;
+        # therefore only assert the exit code here and write the residual list to disk for diagnostics; the strong "directory entirely gone"
+        # assertion is in the 9c shell loop (the shell deletes it after the child process exits).
         $nativeResidual = @()
         if (Test-Path -LiteralPath $instDir) {
             $nativeResidual = @(
@@ -475,15 +475,15 @@ else {
         }
         $nativeDetail = "exit=$($ru.ExitCode)"
         if ($nativeResidual.Count -gt 0) {
-            $nativeDetail += "；QIFW 自删限制，残留 $($nativeResidual.Count) 项（前 5：" + (($nativeResidual | Select-Object -First 5) -join '; ') + "）"
+            $nativeDetail += "; QIFW self-delete limitation, $($nativeResidual.Count) residual item(s) (first 5: " + (($nativeResidual | Select-Object -First 5) -join '; ') + ")"
         } else {
-            $nativeDetail += '；安装目录已清空'
+            $nativeDetail += '; install directory emptied'
         }
-        Add-Step '卸载' ($ru.ExitCode -eq 0) $nativeDetail $uninstallSeconds
+        Add-Step 'Uninstall' ($ru.ExitCode -eq 0) $nativeDetail $uninstallSeconds
     }
 }
 
-# --- 9b. 外壳全回路验证（8.3）---------------------------------------------
+# --- 9b. Full shell loop verification (8.3)---------------------------------------------
 $setupInstallOk = $null
 $setupDiffCount = $null
 $setupUninstallOk = $null
@@ -576,14 +576,14 @@ public static class IconProbe {
 if (-not ('IconProbe' -as [type])) { Add-Type $iconProbeSrc }
 
 if ($setupPath -and -not $SkipInstallVerify) {
-    # 测试钩子：把卸载器的部署位置与数据清理根都重定向到 out/，不碰本机真实用户数据。
+    # Test hook: redirect both the uninstaller deployment location and the data cleanup root to out/, leaving real user data on this machine untouched.
     $dataRoot = Join-Path $OutDir 'data-root'
     $env:ORBBEC_SETUP_DATA_ROOT = $dataRoot
     New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
 
-    Write-Both '== 9b. 外壳静默安装 ==' 'STEP'
+    Write-Both '== 9b. Shell silent install ==' 'STEP'
     $setupInstDir = Join-Path $OutDir 'install-setup'
-    # 与外层原生安装相同的重试策略：被外部终止/缺 maintenancetool 时清理后重试一次。
+    # Same retry policy as the outer native install: clean and retry once when killed externally / maintenancetool missing.
     $setupInstallComplete = $false
     $setupInstallAttempts = 0
     $setupInstallSeconds = 0
@@ -601,35 +601,35 @@ if ($setupPath -and -not $SkipInstallVerify) {
         $setupInstallSeconds += [math]::Round($sw.Elapsed.TotalSeconds, 2)
         $setupInstallComplete = ($r.ExitCode -eq 0) -and (Test-Path -LiteralPath (Join-Path $setupInstDir 'maintenancetool.exe'))
         if (-not $setupInstallComplete -and $setupInstallAttempts -lt 2) {
-            Write-Both "外壳静默安装未完成（exit=$($r.ExitCode)），清理目标目录后重试一次" 'WARN'
+            Write-Both "Shell silent install incomplete (exit=$($r.ExitCode)); cleaning the target directory and retrying once" 'WARN'
         }
     }
-    Add-Step '外壳静默安装' $setupInstallComplete "exit=$($r.ExitCode)，尝试 $setupInstallAttempts 次（外壳日志 $setupShellLog）" $setupInstallSeconds
+    Add-Step 'Shell silent install' $setupInstallComplete "exit=$($r.ExitCode), $setupInstallAttempts attempt(s) (shell log $setupShellLog)" $setupInstallSeconds
 
     $setupDiff = New-Object System.Collections.Generic.List[string]
     if (Test-Path -LiteralPath $setupInstDir) {
         foreach ($f in (Get-ChildItem -LiteralPath $StageRoot -Recurse -File -Force)) {
             $rel = $f.FullName.Substring($StageRoot.Length).TrimStart('\')
             $t = Join-Path $setupInstDir $rel
-            if (-not (Test-Path -LiteralPath $t)) { $setupDiff.Add("缺失 $rel"); continue }
-            if ((Get-Item -LiteralPath $t).Length -ne $f.Length) { $setupDiff.Add("大小不符 $rel") }
+            if (-not (Test-Path -LiteralPath $t)) { $setupDiff.Add("missing $rel"); continue }
+            if ((Get-Item -LiteralPath $t).Length -ne $f.Length) { $setupDiff.Add("size mismatch $rel") }
         }
     } else {
-        $setupDiff.Add('安装目录不存在')
+        $setupDiff.Add('install directory does not exist')
     }
     $setupDiffCount = $setupDiff.Count
     if ($setupDiffCount -gt 0) {
         $setupDiff | Set-Content -LiteralPath (Join-Path $OutDir 'install-setup-diff.txt') -Encoding UTF8
     }
-    Add-Step '外壳安装差异' ($setupDiffCount -eq 0) ($(if ($setupDiffCount) { "差异 $setupDiffCount 项，前 10: " + (($setupDiff | Select-Object -First 10) -join '; ') } else { "staging 侧 $(@(Get-ChildItem -LiteralPath $StageRoot -Recurse -File -Force).Count) 个文件全部就位" }))
+    Add-Step 'Shell install diff' ($setupDiffCount -eq 0) ($(if ($setupDiffCount) { "$setupDiffCount difference(s), first 10: " + (($setupDiff | Select-Object -First 10) -join '; ') } else { "all $(@(Get-ChildItem -LiteralPath $StageRoot -Recurse -File -Force).Count) staging files in place" }))
 
     $desktopDir = [Environment]::GetFolderPath('Desktop')
     $desktopLnk = Join-Path $desktopDir 'OrbbecSlicer.lnk'
     $desktopCreated = Test-Path -LiteralPath $desktopLnk
     $assocCreated = (Get-ItemProperty 'HKCU:\Software\Classes\.3mf' -ErrorAction SilentlyContinue).'(default)' -eq 'OrbbecSlicer.3mf'
-    Add-Step '安装选项落地' ($desktopCreated -and $assocCreated) ("桌面快捷方式=$(if ($desktopCreated) { '有' } else { '无' })；.3mf 关联=$(if ($assocCreated) { '已设置' } else { '未设置' })")
+    Add-Step 'Install options applied' ($desktopCreated -and $assocCreated) ("desktop shortcut=$(if ($desktopCreated) { 'yes' } else { 'no' }); .3mf association=$(if ($assocCreated) { 'set' } else { 'not set' })")
 
-    Write-Both '== 9b2. 卸载入口检查 ==' 'STEP'
+    Write-Both '== 9b2. Uninstall entry check ==' 'STEP'
     $entry = Find-OrbbecUninstallEntry $setupInstDir
     $uninstallerEntryOk = $false
     $uninstallerEntryCount = @(Find-OrbbecEntriesForDir $setupInstDir).Count
@@ -642,14 +642,14 @@ if ($setupPath -and -not $SkipInstallVerify) {
                     (Test-Path -LiteralPath $entry.DisplayIcon) -and ([int]$entry.EstimatedSize -gt 0)
         $uninstallerEntryOk = $fieldsOk -and ($uninstallerEntryCount -eq 1)
     }
-    Add-Step '卸载入口检查' $uninstallerEntryOk ($(if ($entry) { "条目数=$uninstallerEntryCount；UninstallString=$($entry.UninstallString)；DisplayIcon=$($entry.DisplayIcon)；EstimatedSize=$($entry.EstimatedSize)KB" } else { '没有找到指向品牌化卸载器的卸载登记' }))
+    Add-Step 'Uninstall entry check' $uninstallerEntryOk ($(if ($entry) { "entry count=$uninstallerEntryCount; UninstallString=$($entry.UninstallString); DisplayIcon=$($entry.DisplayIcon); EstimatedSize=$($entry.EstimatedSize)KB" } else { 'no uninstall registration pointing to the branded uninstaller found' }))
 
-    Write-Both '== 9b3. 图标检查 ==' 'STEP'
+    Write-Both '== 9b3. Icon check ==' 'STEP'
     $iconsVerified = [IconProbe]::HasGroupIcon($setupPath)
     if ($uninstallerPath) { $iconsVerified = $iconsVerified -and [IconProbe]::HasGroupIcon($uninstallerPath) }
-    Add-Step '图标检查' $iconsVerified ("Setup.exe=$(if ($iconsVerified) { '有图标' } else { '缺图标' })；卸载器=$uninstallerPath")
+    Add-Step 'Icon check' $iconsVerified ("Setup.exe=$(if ($iconsVerified) { 'has icon' } else { 'missing icon' }); uninstaller=$uninstallerPath")
 
-    Write-Both '== 9c. 从卸载入口静默卸载 ==' 'STEP'
+    Write-Both '== 9c. Silent uninstall from the uninstall entry ==' 'STEP'
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     $uninstallExit = -1
     if ($entry -and (Test-Path -LiteralPath $entry.DisplayIcon)) {
@@ -659,14 +659,14 @@ if ($setupPath -and -not $SkipInstallVerify) {
         $uninstallExit = $r.ExitCode
     }
     $sw.Stop()
-    # 卸载器的自删除与登记清理有延迟（启动器要等 UI 退出再删目录）：最多轮询 10 秒。
+    # The uninstaller's self-delete and registration cleanup are delayed (the launcher waits for the UI to exit before deleting the directory): poll for up to 10 seconds.
     $uninstDir = Join-Path $dataRoot 'Local\Orbbec\OrbbecSlicer\uninstaller'
-    $lnk = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\OrbbecSlicer\卸载 OrbbecSlicer.lnk'
+    $lnk = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\OrbbecSlicer\Uninstall OrbbecSlicer.lnk'
     $uninstallCleanupVerified = $false
     $dirGone = $false
     for ($i = 0; $i -lt 20; $i++) {
-        # 安装目录必须整体消失：只检查 maintenancetool.exe 会漏掉 components.xml、
-        # installerResources、network.xml 等 QIFW 元数据残留。
+        # The install directory must disappear entirely: checking only maintenancetool.exe would miss QIFW metadata
+        # residue such as components.xml, installerResources, network.xml.
         $dirGone = -not (Test-Path -LiteralPath $setupInstDir)
         $entryGone = -not (Find-OrbbecUninstallEntry $setupInstDir)
         $uninstGone = -not (Test-Path -LiteralPath $uninstDir)
@@ -681,7 +681,7 @@ if ($setupPath -and -not $SkipInstallVerify) {
         if ($uninstallCleanupVerified) { break }
         Start-Sleep -Milliseconds 500
     }
-    # 目录残留时把清单落盘并写进步骤详情，便于直接判断是哪个文件没删掉。
+    # When the directory is left over, write the list to disk and into the step detail so it is easy to see which file was not deleted.
     $uninstallResidual = @()
     if (-not $dirGone -and (Test-Path -LiteralPath $setupInstDir)) {
         $uninstallResidual = @(
@@ -694,25 +694,61 @@ if ($setupPath -and -not $SkipInstallVerify) {
         }
     }
     $setupUninstallOk = ($uninstallExit -eq 0) -and $uninstallCleanupVerified
-    $dirDetail = if ($dirGone) { '已删除' } elseif ($uninstallResidual.Count -gt 0) {
-        '残留：' + ($uninstallResidual -join '; ')
-    } else { '残留' }
-    Add-Step '从卸载入口静默卸载' $setupUninstallOk ("exit=$uninstallExit；安装目录 $dirDetail；登记 $(if ($entryGone) { '已删除' } else { '残留' })；卸载器 $(if ($uninstGone) { '已删除' } else { '残留' })；开始菜单 $(if ($lnkGone) { '已删除' } else { '残留' })；桌面快捷方式 $(if ($desktopGone) { '已删除' } else { '残留' })；.3mf 关联 $(if ($assocReverted) { '已还原' } else { '仍是 OrbbecSlicer.3mf' })；ProgId $(if ($progGone) { '已删除' } else { '残留' })；剩余条目 $entryCountAfter") $sw.Elapsed.TotalSeconds
+    $dirDetail = if ($dirGone) { 'deleted' } elseif ($uninstallResidual.Count -gt 0) {
+        'residual: ' + ($uninstallResidual -join '; ')
+    } else { 'residual' }
+    Add-Step 'Silent uninstall from the uninstall entry' $setupUninstallOk ("exit=$uninstallExit; install directory $dirDetail; registration $(if ($entryGone) { 'deleted' } else { 'residual' }); uninstaller $(if ($uninstGone) { 'deleted' } else { 'residual' }); Start Menu $(if ($lnkGone) { 'deleted' } else { 'residual' }); desktop shortcut $(if ($desktopGone) { 'deleted' } else { 'residual' }); .3mf association $(if ($assocReverted) { 'reverted' } else { 'still OrbbecSlicer.3mf' }); ProgId $(if ($progGone) { 'deleted' } else { 'residual' }); remaining entries $entryCountAfter") $sw.Elapsed.TotalSeconds
 
-    $setupInstallOk = $setupInstallComplete -and ($setupDiffCount -eq 0) -and $uninstallerEntryOk -and $setupUninstallOk
-    if (-not $setupInstallOk) {
-        # 失败即作废 Setup.exe 与校验文件，避免被误拿去发布。
-        Remove-Item -LiteralPath $setupPath, "$setupPath.sha256" -Force -ErrorAction SilentlyContinue
-        Add-Step '外壳全回路' $false "外壳静默/卸载入口回路失败，Setup.exe 与校验文件已作废；日志：$LogPath / $setupShellLog"
-        Exit-Fail "外壳全回路失败（日志：$LogPath / $setupShellLog）"
+    # 9d. Chinese language variant: the shell accepts --lang on both the installer and the branded
+    # uninstaller. Run the same silent install/uninstall once in Chinese to prove the language option
+    # does not break the loop and that cleanup behaves identically.
+    Write-Both '== 9d. Chinese language loop (--lang zh_CN) ==' 'STEP'
+    $zhDir = Join-Path $OutDir 'install-setup-zh'
+    if (Test-Path -LiteralPath $zhDir) { Remove-Item -LiteralPath $zhDir -Recurse -Force -ErrorAction SilentlyContinue }
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $r = Invoke-Native -FilePath $setupPath -ArgumentList @(
+        '--log', $setupShellLog, '--lang', 'zh_CN', '--silent', 'in', '-t', $zhDir
+    ) -LogPath $LogPath
+    $sw.Stop()
+    $zhInstalled = ($r.ExitCode -eq 0) -and (Test-Path -LiteralPath (Join-Path $zhDir 'maintenancetool.exe'))
+    Add-Step 'Chinese silent install' $zhInstalled "exit=$($r.ExitCode)" $sw.Elapsed.TotalSeconds
+    $zhUninstallOk = $false
+    if ($zhInstalled) {
+        $entryZh = Find-OrbbecUninstallEntry $zhDir
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        if ($entryZh -and (Test-Path -LiteralPath $entryZh.DisplayIcon)) {
+            $r2 = Invoke-Native -FilePath $entryZh.DisplayIcon -ArgumentList @(
+                '--uninstall', '--install-dir', $zhDir, '--silent', '--lang', 'zh_CN'
+            ) -LogPath $LogPath
+            $deadlineZh = (Get-Date).AddSeconds(20)
+            while ((Get-Date) -lt $deadlineZh -and (Test-Path -LiteralPath $zhDir)) { Start-Sleep -Milliseconds 500 }
+            $zhGone = -not (Test-Path -LiteralPath $zhDir)
+            $zhUninstallOk = ($r2.ExitCode -eq 0) -and $zhGone
+            $zhDetail = "exit=$($r2.ExitCode); install directory $(if ($zhGone) { 'deleted' } else { 'residual' })"
+        } else {
+            $zhDetail = 'no uninstall entry pointing to the branded uninstaller'
+        }
+        $sw.Stop()
+        Add-Step 'Chinese silent uninstall' $zhUninstallOk $zhDetail $sw.Elapsed.TotalSeconds
+    } else {
+        $zhDetail = 'skipped (install failed)'
+        Add-Step 'Chinese silent uninstall' $false $zhDetail
     }
-    Add-Step '外壳全回路' $true "静默安装 → 逐文件比对 → 卸载入口检查 → 从入口静默卸载 → 清理 全部通过"
+
+    $setupInstallOk = $setupInstallComplete -and ($setupDiffCount -eq 0) -and $uninstallerEntryOk -and $setupUninstallOk -and $zhInstalled -and $zhUninstallOk
+    if (-not $setupInstallOk) {
+        # On failure discard Setup.exe and the checksum file so they are not published by mistake.
+        Remove-Item -LiteralPath $setupPath, "$setupPath.sha256" -Force -ErrorAction SilentlyContinue
+        Add-Step 'Shell full loop' $false "Shell silent / uninstall-entry loop failed; Setup.exe and checksum file discarded; logs: $LogPath / $setupShellLog"
+        Exit-Fail "Shell full loop failed (logs: $LogPath / $setupShellLog)"
+    }
+    Add-Step 'Shell full loop' $true "silent install -> per-file comparison -> uninstall entry check -> silent uninstall from entry -> cleanup all passed"
     Remove-Item Env:\ORBBEC_SETUP_DATA_ROOT -ErrorAction SilentlyContinue
 } elseif ($setupPath) {
-    Write-Both '按要求跳过外壳静默回路（-SkipInstallVerify）' 'WARN'
+    Write-Both 'Skipping the shell silent loop as requested (-SkipInstallVerify)' 'WARN'
 }
 
-# --- 10. 摘要 -------------------------------------------------------------
+# --- 10. Summary -------------------------------------------------------------
 $nsisBaseline = 159936312
 $deliverable = 'qifw-native'
 if (-not $WithoutSetupUi) { $deliverable = 'setup-shell' }
@@ -767,17 +803,17 @@ $result = [ordered]@{
 }
 Write-JsonFile -Path (Join-Path $OutDir 'result.json') -InputObject ([pscustomobject]$result)
 
-Write-Both ("产物: {0} = {1:N0} B（NSIS 基线 {2:N0} B，相对 {3:P1}）" -f $installerName, $installerBytes, $nsisBaseline, (($installerBytes - $nsisBaseline) / $nsisBaseline)) 'INFO'
-Write-Both "结果: $(Join-Path $OutDir 'result.json')" 'INFO'
-if ($failures.Count -gt 0) { Write-Both "打包流程失败 $($failures.Count) 个步骤" 'ERROR'; exit 1 }
+Write-Both ("Artifact: {0} = {1:N0} B (NSIS baseline {2:N0} B, relative {3:P1})" -f $installerName, $installerBytes, $nsisBaseline, (($installerBytes - $nsisBaseline) / $nsisBaseline)) 'INFO'
+Write-Both "Result: $(Join-Path $OutDir 'result.json')" 'INFO'
+if ($failures.Count -gt 0) { Write-Both "Packaging flow failed at $($failures.Count) step(s)" 'ERROR'; exit 1 }
 
-# 通过后清掉其它批次的工作副本（每份 ~0.5 GB）：日志随结果目录保留，缓存目录为 --cp 共享，均不清
+# After passing, clean up working copies from other batches (~0.5 GB each): logs stay with the result directory and the cache directory is shared via --cp, so neither is cleaned
 $workParent = Split-Path -Parent $WorkRoot
 foreach ($d in (Get-ChildItem -LiteralPath $workParent -Directory -ErrorAction SilentlyContinue)) {
     if ($d.FullName -ne $WorkRoot) {
         Remove-Item -LiteralPath $d.FullName -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Both "清理旧工作副本: $($d.FullName)" 'INFO'
+        Write-Both "Cleaned old working copy: $($d.FullName)" 'INFO'
     }
 }
-Write-Both '产品打包全部通过' 'OK'
+Write-Both 'Product packaging all passed' 'OK'
 exit 0

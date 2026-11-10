@@ -3,22 +3,22 @@ import QtQuick
 import QtQuick.Layouts
 import SetupUi
 
-// 安装未完成页：回滚说明 + 诊断信息 + 查看日志 / 重新尝试。
+// Install incomplete page: rollback explanation + diagnostics + view logs / try again.
 Item {
     id: page
 
-    // 页面绘制在 AppFrame 的内容区里（尺寸 = 窗口 − 标题栏/侧栏/内边距）。但页面拿到的
-    // parent 尺寸在这个构造顺序下是 0（AppFrame 布局晚一步才定下来，页面的 anchors.fill
-    // 不会跟着重算），内容区的 ColumnLayout 于是按最窄一行（97px）排版，自动换行的地方
-    // 一律提前折行。所以布局不跟 parent 走，直接按窗口尺寸算内容区。窗口尺寸未知时
-    // （隐身的冒烟副本）退回默认 940×650。
+    // The page is drawn inside AppFrame's content area (size = window − title bar/side bar/padding). But the
+    // parent size the page receives in this construction order is 0 (AppFrame's layout settles a step later, so the page's anchors.fill
+    // is not recalculated), and the content area's ColumnLayout therefore lays out to the narrowest row (97px), wrapping
+    // early wherever it would wrap. So the layout does not follow parent; it computes the content area from the window size directly. When the window size is unknown
+    // (the hidden smoke copy) it falls back to the default 940×650.
     readonly property real contentW: (page.Window.width > 0 ? page.Window.width : theme.windowW)
                                      - theme.sideW - theme.contentPaddingH * 2
     readonly property real contentH: (page.Window.height > 0 ? page.Window.height : theme.windowH)
                                      - theme.titleBarH - theme.contentPaddingV - 24
     UiTheme { id: theme }
-    property string rollbackTitle: qsTr("原版本和原配置已恢复")
-    property string rollbackText: qsTr("程序文件已回滚到原版本，配置快照校验通过。你可以继续使用原版本，或重新尝试安装。")
+    property string rollbackTitle: qsTr("Original version and configuration restored")
+    property string rollbackText: qsTr("Program files have been rolled back to the original version and the configuration snapshot passed verification. You can keep using the original version or try installing again.")
     property string errorCode: ""
     property string errorText: ""
     property string logPath: Host.logPath
@@ -32,18 +32,18 @@ Item {
 
         Text {
             Layout.fillWidth: true
-            text: qsTr("安装未完成")
+            text: qsTr("Installation incomplete")
             wrapMode: Text.WordWrap
             font.family: theme.fontFamily
             font.pixelSize: theme.fontTitle
             font.weight: Font.DemiBold
             color: theme.text
         }
-        // 导语（.setup-view .lead { margin: 9px 0 24px }）
+        // Lead copy (.setup-view .lead { margin: 9px 0 24px })
         Item { Layout.preferredHeight: 9 }
         Text {
             Layout.fillWidth: true
-            text: qsTr("写入新版本时发生异常，系统已停止后续操作。")
+            text: qsTr("An error occurred while writing the new version, so subsequent operations were stopped.")
             wrapMode: Text.WordWrap
             font.family: theme.fontFamily
             lineHeight: 1.7
@@ -73,7 +73,7 @@ Item {
                     wrapMode: Text.WordWrap
                     width: parent.width
                     text: page.rollbackText
-                    lineHeight: 1.65                     // 卡片统一 line-height: 1.65
+                    lineHeight: 1.65                     // Unified card line-height: 1.65
                     font.family: theme.fontFamily; font.pixelSize: theme.fontBody; color: theme.successInk
                 }
             }
@@ -97,13 +97,13 @@ Item {
                 anchors.leftMargin: 16
                 anchors.rightMargin: 16
                 spacing: 4
-                Text { text: qsTr("诊断信息"); font.family: theme.fontFamily; font.pixelSize: theme.fontBody; font.bold: true; color: theme.infoInk }
+                Text { text: qsTr("Diagnostics"); font.family: theme.fontFamily; font.pixelSize: theme.fontBody; font.bold: true; color: theme.infoInk }
                 Text {
                     wrapMode: Text.WordWrap
                     width: parent.width
                     text: {
-                        const code = page.errorCode.length ? qsTr("错误代码 INS-%1").arg(page.errorCode) : qsTr("错误代码未知")
-                        return page.errorText.length ? code + "，" + page.errorText : code
+                        const code = page.errorCode.length ? qsTr("Error code INS-%1").arg(page.errorCode) : qsTr("Error code unknown")
+                        return page.errorText.length ? code + ", " + page.errorText : code
                     }
                     lineHeight: 1.65
                     font.family: theme.fontFamily; font.pixelSize: theme.fontBody; color: theme.infoInk
@@ -111,7 +111,7 @@ Item {
                 Text {
                     width: parent.width
                     elide: Text.ElideMiddle
-                    text: qsTr("日志：%1").arg(page.logPath)
+                    text: qsTr("Log: %1").arg(page.logPath)
                     font.family: theme.fontFamily; font.pixelSize: theme.fontSmall; color: theme.infoInk
                 }
             }
@@ -119,18 +119,18 @@ Item {
 
         Item { Layout.fillHeight: true }
 
-        // 操作行贴底（评审稿 .setup-actions { margin-top:auto; padding-top:22px }）
+        // Action row pinned to the bottom (design mockup .setup-actions { margin-top:auto; padding-top:22px })
         RowLayout {
             Layout.fillWidth: true
             Layout.topMargin: 22
             spacing: 9
             UiBtn {
-                text: qsTr("打开日志")
+                text: qsTr("Open logs")
                 onClicked: page.openLogsRequested()
             }
             Item { Layout.fillWidth: true }
             UiBtn {
-                text: qsTr("重新尝试")
+                text: qsTr("Try again")
                 primary: true
                 onClicked: page.retryRequested()
             }

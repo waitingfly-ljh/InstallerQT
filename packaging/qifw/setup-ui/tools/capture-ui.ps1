@@ -1,22 +1,25 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-  构建截图版外壳，并逐视图抓图（验证界面用）。
+  Build the screenshot build of the shell and capture screenshots view by view (for UI verification).
 
 .DESCRIPTION
-  只做两件事：
-    1. 以 -DORBBEC_SETUP_SHOT=ON 把外壳编成截图构建，产物在 build-shot/，不碰 build/ 与 dist/。
-    2. 按视图逐个运行截图构建（--selftest --qml-smoke --view <视图>），窗口存成
-       out/ui-shots/<视图>.png，选项勾选态存成 out/ui-shots/option-<键>.png。
+  Does only two things:
+    1. Build the shell as a screenshot build with -DORBBEC_SETUP_SHOT=ON; artifacts go to build-shot/, leaving build/ and dist/ untouched.
+    2. Run the screenshot build view by view (--selftest --qml-smoke --view <view>); windows are saved as
+       out/ui-shots/<view>.png and option checkbox states as out/ui-shots/option-<key>.png.
 
-  直接跑 build-shot/ 里的 exe，运行时由 toolchain 的 Qt bin 提供（PATH），不经过
-  windeployqt：部署目录里残留的旧 exe / 旧 qml 曾经让问题排查跑偏。
+  Runs the exe in build-shot/ directly; the runtime is provided by the toolchain's Qt bin (PATH) without going through
+  windeployqt: stale exe / qml left in the deploy directory has misled troubleshooting before.
 
 .EXAMPLE
   powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\capture-ui.ps1 -Models 'options|failure'
 #>
 param(
     [string]$Models = 'options|maintenance|progress|complete|failure|uninstall-scope|uninstall-confirm|uninstall-done|option-shortcutDesktop|option-assoc3mf|option-assocStl|option-launchAfterInstall',
+    # UI language for the captures (e.g. zh_CN). Empty keeps the default (English / system locale).
+    # Captures are written as <view>-<shortlang>.png so they can be compared side by side with the English set.
+    [string]$Lang = '',
     [switch]$SkipBuild
 )
 
@@ -30,9 +33,9 @@ $VcVars = 'C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxilia
 $ShellLog = Join-Path $env:LOCALAPPDATA 'Orbbec\OrbbecSlicerSetup\logs\setup-shell.log'
 $Exe = Join-Path $BuildDir 'OrbbecSlicerSetup.exe'
 
-if (-not (Test-Path -LiteralPath $QtBin)) { throw "找不到 Qt: $QtBin" }
+if (-not (Test-Path -LiteralPath $QtBin)) { throw "Qt not found: $QtBin" }
 
-# 视图名 = SetupController.view 的名字；卸载三屏同名，冒烟里由 main.cpp 额外切侧栏。
+# View names = SetupController.view names; the three uninstall screens share names, and main.cpp additionally switches the sidebar in the smoke run.
 $Views = @('options', 'maintenance', 'progress', 'complete', 'failure',
            'uninstall-scope', 'uninstall-confirm', 'uninstall-done')
 $OptionKeys = @('shortcutDesktop', 'assoc3mf', 'assocStl', 'launchAfterInstall')
@@ -45,8 +48,8 @@ function Read-ShellLogTail {
     }
 }
 
-# 跑一次截图；30 秒没退出说明窗口没起来，把外壳日志带出来再失败。
-# 同一个视图最多重试两次：启动阶段偶发崩溃（0xC0000005），日志里没有 QML 错误，单独重跑即恢复。
+# Run one capture; if it does not exit within 30 seconds the window probably did not come up, so print the shell log and then fail.
+# Retry each view at most twice: startup occasionally crashes (0xC0000005) with no QML error in the log, and a lone rerun recovers.
 function Invoke-Shot([string[]]$ShotArgs, [string]$Png) {
     if (Test-Path -LiteralPath $Png) { Remove-Item -LiteralPath $Png -Force }
     for ($attempt = 1; $attempt -le 2; ++$attempt) {
@@ -54,26 +57,26 @@ function Invoke-Shot([string[]]$ShotArgs, [string]$Png) {
         if (-not $proc.WaitForExit(30000)) {
             Stop-Process -Id $proc.Id -Force
             Read-ShellLogTail
-            throw "$Png 30 秒内没有退出（窗口可能没起来），见 $ShellLog"
+            throw "$Png did not exit within 30 seconds (the window may not have come up), see $ShellLog"
         }
         if (Test-Path -LiteralPath $Png) {
             if ($attempt -gt 1) {
-                Write-Step ("{0}: 第 2 次尝试才出图（exit {1}）" -f [System.IO.Path]::GetFileName($Png), $proc.ExitCode)
+                Write-Step ("{0}: screenshot only produced on the 2nd attempt (exit {1})" -f [System.IO.Path]::GetFileName($Png), $proc.ExitCode)
             }
             break
         }
         if ($attempt -eq 2) {
             Read-ShellLogTail
-            throw "$Png 没有产出截图（exit $($proc.ExitCode)）"
+            throw "$Png produced no screenshot (exit $($proc.ExitCode))"
         }
-        Write-Step ("{0} 第一次没出图（exit {1}），重跑一次" -f [System.IO.Path]::GetFileName($Png), $proc.ExitCode)
+        Write-Step ("{0} produced no screenshot on the first try (exit {1}), rerunning once" -f [System.IO.Path]::GetFileName($Png), $proc.ExitCode)
     }
     Write-Step ("{0} -> {1}" -f [System.IO.Path]::GetFileName($Png), $Png)
 }
 
-# --- 1. 构建截图版 -----------------------------------------------------------
+# --- 1. Build the screenshot build -----------------------------------------------------------
 if (-not $SkipBuild) {
-    Write-Step '构建截图版外壳（build-shot/）'
+    Write-Step 'Building screenshot shell (build-shot/)'
     $bat = Join-Path $Here 'out\build-shot.cmd'
     $lines = @(
         '@echo off',
@@ -87,8 +90,8 @@ if (-not $SkipBuild) {
 
     $log = Join-Path $Here 'out\build-shot.log'
     $errLog = Join-Path $Here 'out\build-shot.log.err'
-    # 不用 Start-Process -Wait：非交互管道里 vcvars64 → VsDevCmd 可能等输入永不退出。
-    # 这里重定向标准流、立刻关掉 stdin（EOF），并在 WaitForExit 的同时读走输出。
+    # Don't use Start-Process -Wait: in a non-interactive pipe vcvars64 -> VsDevCmd may wait for input and never exit.
+    # Here redirect the standard streams, close stdin immediately (EOF), and drain output while waiting in WaitForExit.
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = 'cmd.exe'
     $psi.Arguments = "/c `"$bat`""
@@ -106,7 +109,7 @@ if (-not $SkipBuild) {
     $errTask = $p.StandardError.ReadToEndAsync()
     if (-not $p.WaitForExit(1200000)) {
         try { $p.Kill() } catch {}
-        throw "构建超过 20 分钟仍未结束，已终止（日志见 $log）"
+        throw "Build did not finish within 20 minutes; terminated (see log: $log)"
     }
     $p.WaitForExit()
     [System.IO.File]::WriteAllText($log, $outTask.Result, (New-Object System.Text.UTF8Encoding($false)))
@@ -115,23 +118,23 @@ if (-not $SkipBuild) {
         foreach ($l in @($log, $errLog)) {
             if (Test-Path -LiteralPath $l) { Get-Content -LiteralPath $l -Tail 20 | ForEach-Object { Write-Host $_ } }
         }
-        throw "截图版编译失败（exit $($p.ExitCode)），日志见 $log"
+        throw "Screenshot build failed (exit $($p.ExitCode)); see log: $log"
     }
-    # 编译有时会"带着错误继续跑旧 exe"（例如 qmlcachegen 失败但 ninja 码被吞掉），
-    # 这里用日志兜底：出现 FAILED 或 QML 语法/类型错误就判定失败，避免截出旧界面。
+    # The build sometimes "keeps running the old exe despite errors" (e.g. qmlcachegen fails but the ninja code is swallowed),
+    # so use the log as a fallback: treat FAILED or a QML syntax/type error as a failure to avoid capturing the old UI.
     $bad = @(Get-Content -LiteralPath $log, $errLog -ErrorAction SilentlyContinue |
              Where-Object { $_ -match 'FAILED:|error:|Expected token|is not a type|Binding loop' })
     if ($bad.Count -gt 0) {
         $bad | Select-Object -First 20 | ForEach-Object { Write-Host $_ }
-        throw "截图版编译有错误（见 $log），不运行旧 exe"
+        throw "Screenshot build has errors (see $log); not running the old exe"
     }
 }
-if (-not (Test-Path -LiteralPath $Exe)) { throw "未找到截图版 exe: $Exe" }
+if (-not (Test-Path -LiteralPath $Exe)) { throw "Screenshot exe not found: $Exe" }
 
-# --- 2. 逐个视图截图 ---------------------------------------------------------
-# 截图要真实渲染（offscreen 平台不出图），用 Qt Quick 的软件渲染后端，避免依赖 GPU。
-# DPI 固定成 96，再把缩放固定成 1：机器是 125% 缩放，Windows 会按 1.25 倍栅格化窗口，
-# 截图变成 1175×813；评审稿按 100% 设计（940×650），两者都要固定才能逐像素对照。
+# --- 2. Capture screenshots view by view ---------------------------------------------------------
+# Screenshots need real rendering (the offscreen platform produces no image), so use the Qt Quick software rendering backend to avoid depending on the GPU.
+# Fix DPI to 96 and scale factor to 1: the machine is at 125% scaling, so Windows rasterizes the window at 1.25x and
+# the screenshot becomes 1175x813; the review artwork is designed at 100% (940x650), so both must be fixed for a pixel-by-pixel comparison.
 New-Item -ItemType Directory -Force -Path $ShotDir | Out-Null
 $env:QT_QUICK_BACKEND = 'software'
 $env:QT_ENABLE_HIGHDPI_SCALING = '0'
@@ -141,47 +144,61 @@ $env:PATH = "$BuildDir;$QtBin;$env:PATH"
 $env:ORBBEC_SETUP_SHOT_DIR = $ShotDir.TrimEnd('\')
 
 $names = @($Models.Split('|') | ForEach-Object { $_.Trim() } | Where-Object { $_.Length -gt 0 })
+# Language-specific captures: append --lang; the shell still writes <view>.png (the file name comes from
+# --view, not from the language), so rename to <view>-<shortlang>.png afterwards.
+$langArgs = if ($Lang) { @('--lang', $Lang) } else { @() }
+$langSuffix = if ($Lang) { '-' + $Lang.Split('_')[0] } else { '' }
 $failed = New-Object System.Collections.Generic.List[string]
 foreach ($v in $Views) {
     if ($names -notcontains $v) { continue }
-    try { Invoke-Shot @('--selftest', '--qml-smoke', '--view', $v) (Join-Path $ShotDir "$v.png") }
-    catch { Write-Step "失败：$($_.Exception.Message)"; $failed.Add($v) }
+    try {
+        Invoke-Shot (@('--selftest', '--qml-smoke', '--view', $v) + $langArgs) (Join-Path $ShotDir "$v.png")
+        if ($langSuffix) {
+            Move-Item -LiteralPath (Join-Path $ShotDir "$v.png") -Destination (Join-Path $ShotDir "$v$langSuffix.png") -Force
+        }
+    }
+    catch { Write-Step "Failed: $($_.Exception.Message)"; $failed.Add($v) }
 }
 
-# 安装选项：同一个安装设置页，取消其中一个勾选项。
-# 外壳仍然按 --view（options）命名截图，所以每次先截到 options.png，再改成 option-<键>.png。
-# 这一步必须放在所有普通视图之后：否则随后截的 options 会把改出来的文件覆盖回去。
+# Install options: the same install settings page with one checkbox unchecked.
+# The shell still names the screenshot after --view (options), so each time capture to options.png first, then rename to option-<key>.png.
+# This step must come after all normal views: otherwise the options captured afterwards would overwrite the renamed files.
 foreach ($k in $OptionKeys) {
     $name = "option-$k"
     if ($names -notcontains $name) { continue }
     try {
-        Invoke-Shot @('--selftest', '--qml-smoke', '--view', 'options', '--option', $k) (Join-Path $ShotDir 'options.png')
-        Move-Item -LiteralPath (Join-Path $ShotDir 'options.png') -Destination (Join-Path $ShotDir "$name.png") -Force
-    } catch { Write-Step "失败：$($_.Exception.Message)"; $failed.Add($name) }
+        Invoke-Shot (@('--selftest', '--qml-smoke', '--view', 'options', '--option', $k) + $langArgs) (Join-Path $ShotDir 'options.png')
+        Move-Item -LiteralPath (Join-Path $ShotDir 'options.png') -Destination (Join-Path $ShotDir "$name$langSuffix.png") -Force
+    } catch { Write-Step "Failed: $($_.Exception.Message)"; $failed.Add($name) }
 }
 if ($names -contains 'options') {
-    try { Invoke-Shot @('--selftest', '--qml-smoke', '--view', 'options') (Join-Path $ShotDir 'options.png') }
-    catch { Write-Step "失败：$($_.Exception.Message)"; $failed.Add('options') }
+    try {
+        Invoke-Shot (@('--selftest', '--qml-smoke', '--view', 'options') + $langArgs) (Join-Path $ShotDir 'options.png')
+        if ($langSuffix) {
+            Move-Item -LiteralPath (Join-Path $ShotDir 'options.png') -Destination (Join-Path $ShotDir "options$langSuffix.png") -Force
+        }
+    }
+    catch { Write-Step "Failed: $($_.Exception.Message)"; $failed.Add('options') }
 }
 
-# 普通视图截完之后核对安装设置页的默认勾选与选项传递（真实页面走一遍"安装"）。
-# 截图版带着 ORBBEC_SETUP_SHOT_DIR 时 --selftest 会去等截图；这里用环境变量临时去掉，
-# 只保留 --selftest 本身。结果写进外壳日志，出现"自检: 交给引擎"即通过。
+# After the normal views are captured, verify the install settings page's default checks and option passing (a real pass through "install").
+# When the screenshot build has ORBBEC_SETUP_SHOT_DIR set, --selftest waits for a screenshot; here temporarily remove it via the environment variable,
+# keeping only --selftest itself. The result is written to the shell log; seeing "Self-test: handing to engine" means passed.
 $selftestLog = Join-Path $env:LOCALAPPDATA 'Orbbec\OrbbecSlicerSetup\logs\setup-shell.log'
 $savedShotDir = $env:ORBBEC_SETUP_SHOT_DIR
 $env:ORBBEC_SETUP_SHOT_DIR = ''
 $env:ORBBEC_SETUP_SELFTEST_OPTIONS = '1'
 try {
     $p = Start-Process -FilePath $Exe -ArgumentList @('--selftest') -NoNewWindow -PassThru
-    if (-not $p.WaitForExit(30000)) { Stop-Process -Id $p.Id -Force; throw '自检 30 秒内没有退出' }
+    if (-not $p.WaitForExit(30000)) { Stop-Process -Id $p.Id -Force; throw 'Self-test did not exit within 30 seconds' }
     $line = @(Get-Content -LiteralPath $selftestLog -Encoding UTF8 -ErrorAction SilentlyContinue |
-              Where-Object { $_ -match '自检: 交给引擎' }) | Select-Object -Last 1
-    if (-not $line) { throw "自检没有写出选项行，见 $selftestLog" }
+              Where-Object { $_ -match 'Self-test: handing to engine' }) | Select-Object -Last 1
+    if (-not $line) { throw "Self-test did not write the options line, see $selftestLog" }
     Write-Step $line
 } finally {
     Remove-Item Env:\ORBBEC_SETUP_SELFTEST_OPTIONS -ErrorAction SilentlyContinue
     $env:ORBBEC_SETUP_SHOT_DIR = $savedShotDir
 }
 
-if ($failed.Count -gt 0) { throw "以下视图没截到图：$($failed -join ', ')" }
-Write-Step '完成'
+if ($failed.Count -gt 0) { throw "The following views failed to capture: $($failed -join ', ')" }
+Write-Step 'Done'

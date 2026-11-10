@@ -4,8 +4,8 @@ import QtQuick.Layouts
 import QtQuick.Controls.Basic
 import SetupUi
 
-// 外壳框架：42px 自定义标题栏 + 228px 深色侧栏 + 内容区。
-// 页面通过 default property content 挂到内容区。
+// Shell frame: 42px custom title bar + 228px dark sidebar + content area.
+// Pages attach to the content area through the default property content.
 Item {
     id: frame
     UiTheme { id: theme }
@@ -14,10 +14,10 @@ Item {
     signal closeRequested()
     signal stepClicked(int index)
 
-    property string windowTitle: qsTr("OrbbecSlicer 安装向导")
-    property string sideHeadline: qsTr("让创意\n开始成形")
+    property string windowTitle: qsTr("OrbbecSlicer Setup Wizard")
+    property string sideHeadline: qsTr("Let creativity\ntake shape")
     property string sideFoot: qsTr("OrbbecSlicer %1").arg(Host.version)
-    // install | uninstall：卸载使用独立的三步列表（数据范围 → 确认 → 完成）
+    // install | uninstall: uninstall uses its own three-step list (data scope -> confirm -> complete)
     property string style: "install"
     property var installSteps: []
     property var uninstallSteps: []
@@ -30,17 +30,17 @@ Item {
         anchors.fill: parent
         spacing: 0
 
-        // --- 标题栏 ---
+        // --- Title bar ---
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: theme.titleBarH
             color: theme.topbar
-            // 评审稿 .setup-titlebar 的下边线（1px，在 42px 之内）
+            // Bottom border of the design mockup .setup-titlebar (1px, within the 42px)
             Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
                         height: 1; color: theme.titleLine }
-            // 标题栏拖动区盖住整条标题栏；页面上的输入框滚到这里时，滚轮事件会沿着
-            // 父链冒泡到拖动区——不拦下就会被当成"拖动窗口"，拖动中收不到位置变化，
-            // 松手后窗口才突然跳走。这里直接忽略滚轮。
+            // The title bar drag area covers the whole title bar; when an input field on the page scrolls here, wheel events bubble
+            // up the parent chain to the drag area — if not intercepted, they are treated as "dragging the window", no position changes are received during the drag,
+            // and the window suddenly jumps away on release. So the wheel is ignored directly here.
             WheelHandler { onWheel: (e) => { e.accepted = true } }
 
             RowLayout {
@@ -60,7 +60,7 @@ Item {
                 }
                 Item { Layout.fillWidth: true }
 
-                // 最小化
+                // Minimize
                 Item {
                     Layout.preferredWidth: 46
                     Layout.fillHeight: true
@@ -84,7 +84,7 @@ Item {
                     }
                 }
 
-                // 关闭
+                // Close
                 Item {
                     Layout.preferredWidth: 46
                     Layout.fillHeight: true
@@ -108,7 +108,7 @@ Item {
                 }
             }
 
-            // 标题栏拖动
+            // Title bar drag
             MouseArea {
                 anchors.fill: parent
                 anchors.rightMargin: 92
@@ -117,7 +117,7 @@ Item {
                 onPositionChanged: (m) => {
                     if (!pressed)
                         return
-                    // 从 MouseArea 向上找所属的 Window；不依赖某个具体的 id。
+                    // Walk up from the MouseArea to the owning Window; do not depend on a specific id.
                     const w = frame.Window.window
                     if (w) {
                         w.x += m.x - pressPos.x
@@ -127,29 +127,29 @@ Item {
             }
         }
 
-        // --- 主体 --- 侧栏 | 内容区
+        // --- Body --- sidebar | content area
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: 0
 
-            // 侧栏
+            // Sidebar
             Rectangle {
                 id: sideArea
                 Layout.preferredWidth: theme.sideW
                 Layout.fillHeight: true
                 clip: true
-                // 布局会把子项 reprant 到它自己身上；侧栏里的光斑与文字列因此显式钉在 sideArea 上，
-                // 否则 anchors.fill: parent 挂的是布局，尺寸与内边距都会落空。
-                // 评审稿 .setup-side 的底色：linear-gradient(175deg, sideTop 0%, sideMid 58%, sideBottom 100%)
+                // The layout reparents its children onto itself; the glow and text column in the sidebar are therefore explicitly pinned to sideArea,
+                // otherwise anchors.fill: parent would attach to the layout, and sizes and padding would be lost.
+                // Background color of the design mockup .setup-side: linear-gradient(175deg, sideTop 0%, sideMid 58%, sideBottom 100%)
                 gradient: Gradient {
                     GradientStop { position: 0.0; color: theme.sideTop }
                     GradientStop { position: 0.58; color: theme.sideMid }
                     GradientStop { position: 1.0; color: theme.sideBottom }
                 }
-                // 左上光斑：radial-gradient(circle at 10% 18%, rgba(55,192,184,.35), transparent 35%)。
-                // Qt 只有线性渐变，径向用 Image 画：resources/glow.png 是 228×300 的预生成图
-                // （公式见 SideGlow.qml），按侧栏实际尺寸拉伸。
+                // Top-left glow: radial-gradient(circle at 10% 18%, rgba(55,192,184,.35), transparent 35%).
+                // Qt only has linear gradients, so the radial one is drawn with an Image: resources/glow.png is a pre-generated 228×300 image
+                // (formula in SideGlow.qml), stretched to the sidebar's actual size.
                 Image {
                     parent: sideArea
                     anchors.fill: parent
@@ -160,7 +160,7 @@ Item {
                 }
 
                 ColumnLayout {
-                    // 评审稿 .setup-side { padding: 34px 24px }；底部版本号单独贴底 24px。
+                    // Design mockup .setup-side { padding: 34px 24px }; the bottom version number is pinned 24px from the bottom separately.
                     parent: sideArea
                     anchors.fill: parent
                     anchors.leftMargin: 24
@@ -202,7 +202,7 @@ Item {
                 }
             }
 
-            // 内容区（评审稿 .setup-main background: 白色）
+            // Content area (design mockup .setup-main background: white)
             Rectangle {
                 id: contentArea
                 Layout.fillWidth: true
@@ -211,7 +211,7 @@ Item {
 
                 Item {
                     id: contentHost
-                    // 同上：统一钉在内容区矩形上，而不是布局。
+                    // Same as above: pinned uniformly to the content area rectangle, not the layout.
                     parent: contentArea
                     anchors.fill: parent
                     anchors.leftMargin: theme.contentPaddingH

@@ -5,18 +5,18 @@ import QtQuick.Layouts
 import QtQuick.Controls.Basic
 import SetupUi
 
-// 外壳主窗口：无边框 940×650，按控制器状态切换页面。
-// 控制器由 App.qml / QmlSmoke 创建并把对象赋给本窗口的 ctl（只赋值、不需要在本文件声明 required），本文件只负责窗口外壳与页面装配。
+// Shell main window: frameless 940×650, switches pages based on controller state.
+// The controller is created by App.qml / QmlSmoke and its object is assigned to this window's ctl (assignment only; no required declaration needed here); this file only handles the window shell and page assembly.
 ApplicationWindow {
     id: window
     objectName: "mainWindow"
-    // 控制器由外层（App.qml / QmlSmoke）的 required 属性创建并注入：外层先给的是占位对象，
-    // 构造完成后再换成真正的控制器；页面绑定在拿到真控制器之前读到的是占位值，不会是 null。
+    // The controller is created and injected by the outer layer's (App.qml / QmlSmoke) required property: the outer layer first provides a placeholder object,
+    // then swaps in the real controller after construction completes; pages read the placeholder value before the real controller arrives, never null.
     //
-    // 声明位置：QML 绑定是按名解析、与声明位置无关；这里放在引用点之前只是为了便于阅读。
+    // Declaration position: QML bindings resolve by name and are independent of declaration position; it is placed before the reference point only for readability.
     readonly property SetupController ctl: rootCtl.obj
 
-    // 占位 → 真控制器的开关：外层在构造结束后调用 bindController() 切换。
+    // Switch from placeholder to the real controller: the outer layer calls bindController() to swap after construction ends.
     QtObject {
         id: rootCtl
         property QtObject obj: placeholderCtl
@@ -24,7 +24,7 @@ ApplicationWindow {
 
     function bindController(controller) { rootCtl.obj = controller }
 
-    // 占位控制器：与真控制器同类型、默认值，页面在真控制器注入前读它不会报错。
+    // Placeholder controller: same type and defaults as the real controller; pages reading it before the real controller is injected do not error.
     readonly property SetupController placeholderCtl: SetupController { }
     UiTheme { id: theme }
     visible: true
@@ -32,41 +32,41 @@ ApplicationWindow {
     height: theme.windowH
     minimumWidth: theme.windowMinW
     minimumHeight: theme.windowMinH
-    title: qsTr("OrbbecSlicer 安装向导")
+    title: qsTr("OrbbecSlicer Setup Wizard")
     flags: Qt.Window | Qt.FramelessWindowHint
     color: theme.page
 
     onClosing: (close) => {
-        // 安装/卸载进行中不允许关闭：交给引擎完成或被取消。
+        // Closing is not allowed while installing/uninstalling: let the engine finish or cancel it.
         if (Host.engine.busy)
             close.accepted = false
     }
 
-    // 关闭确认：安装进行中不允许直接退出。
+    // Close confirmation: direct exit is not allowed while installing.
     function requestClose() {
         if (Host.engine.busy)
             return
         Qt.quit()
     }
 
-    // 截图模式的触发在 App.qml（窗口显示、页面摆好之后）；本文件不需要知道截图的事。
+    // Screenshot mode is triggered in App.qml (after the window is shown and pages are positioned); this file need not know about screenshots.
 
-    // 无边框窗口没有系统标题栏：整块内容由 AppFrame 绘制（标题栏可拖动）。
-    // 直接声明在这里、不再包一层 Loader：ApplicationWindow 只把直接子节点放进 contentItem，
-    // Loader 装出来的外壳虽然建好了却不进场景，页面也就从不实例化。
-    // 必须锚满整窗：ApplicationWindow 只给直接子项落默认位置（0,0），不会设尺寸，
-    // 外壳不锚满就是 0×0，里面的布局排不到内容区，页面永远不建。
+    // A frameless window has no system title bar: the whole content is drawn by AppFrame (the title bar is draggable).
+    // Declared directly here without wrapping in a Loader: ApplicationWindow only puts direct children into contentItem,
+    // so a shell created by a Loader is built but never enters the scene, and pages are never instantiated.
+    // It must anchor to the full window: ApplicationWindow only gives direct children a default position (0,0) and does not set a size,
+    // so an unanchored shell is 0×0, the inner layout cannot reach the content area, and pages are never created.
     AppFrame {
         anchors.fill: parent
         windowTitle: ctl.view === "dataScope" || ctl.view === "confirm" || ctl.view === "uninstalled"
-                     ? qsTr("卸载 OrbbecSlicer")
-                     : qsTr("OrbbecSlicer 安装向导")
+                     ? qsTr("Uninstall OrbbecSlicer")
+                     : qsTr("OrbbecSlicer Setup Wizard")
         sideHeadline: ctl.view === "dataScope" || ctl.view === "confirm"
-                      ? qsTr("卸载\nOrbbecSlicer")
-                      : qsTr("让创意\n开始成形")
+                      ? qsTr("Uninstall\nOrbbecSlicer")
+                      : qsTr("Let creativity\ntake shape")
         sideFoot: {
             if (ctl.view === "dataScope" || ctl.view === "confirm")
-                return qsTr("卸载过程无需登录\n无需互联网连接")
+                return qsTr("Uninstalling requires no sign-in\nand no internet connection")
             return qsTr("OrbbecSlicer %1").arg(ctl.targetVersion)
         }
         installSteps: ctl.installSteps
@@ -90,11 +90,11 @@ ApplicationWindow {
                 return 0
             }
 
-            // 页面自己按窗口尺寸算出内容区大小（见各页顶部的 contentW/contentH 说明），
-            // 这里只把它们横向钉在内容区里，不再 anchors.fill。
-            // 切换页面用 StackLayout：隐藏的页不参与排版，只显示 ctl.view 那一页。
+            // Pages compute their content-area size from the window size themselves (see the contentW/contentH notes at the top of each page);
+            // here they are only pinned horizontally into the content area, no longer anchors.fill.
+            // Page switching uses StackLayout: hidden pages do not participate in layout, only the ctl.view page is shown.
 
-            // ---- 安装设置 ----
+            // ---- Install options ----
             OptionsPage {
                 id: optionsPage
                 objectName: "optionsPage"
@@ -104,18 +104,18 @@ ApplicationWindow {
                 assoc3mf: ctl.installOptions.assoc3mf
                 assocStl: ctl.installOptions.assocStl
                 launchAfterInstall: ctl.installOptions.launchAfterInstall
-                notice: ctl.cancelled ? qsTr("安装已取消，已写入的文件已清除。") : ""
+                notice: ctl.cancelled ? qsTr("Installation was cancelled; written files have been removed.") : ""
                 onDirChanged: (d) => ctl.installOptions.installParentDir = d
                 onOptionChanged: (key, value) => ctl.installOptions[key] = value
                 onInstallRequested: {
-                    // 只输入、没按回车就点安装时，输入框文字已经通过 onDirChanged 同步；
-                    // 这里再补一次，保证控制器拿到的是要安装的位置。
+                    // When the user types without pressing Enter and then clicks Install, the input text was already synced via onDirChanged;
+                    // syncing once more here ensures the controller gets the intended install location.
                     ctl.installOptions.installParentDir = optionsPage.installParentDir
                     ctl.beginInstall()
                 }
             }
 
-            // ---- 维护：修复 / 升级 / 降级 ----
+            // ---- Maintenance: Repair / Update / Downgrade ----
             MaintenancePage {
                 visible: ctl.view === "maintenance"
                 mode: ctl.mode === "fresh" ? "repair" : ctl.mode
@@ -131,33 +131,33 @@ ApplicationWindow {
                 }
             }
 
-            // ---- 安装过程 ----
+            // ---- Installing ----
             ProgressPage {
                 visible: ctl.view === "progress"
                 progress: ctl.displayProgress
                 complete: ctl.finishing
-                heading: ctl.uninstalling ? qsTr("正在卸载 OrbbecSlicer")
-                           : ctl.runMode === "repair" ? qsTr("正在修复 OrbbecSlicer")
-                           : ctl.runMode === "upgrade" ? qsTr("正在升级 OrbbecSlicer")
-                           : ctl.runMode === "downgrade" ? qsTr("正在降级 OrbbecSlicer")
-                           : qsTr("正在安装 OrbbecSlicer")
-                lead: ctl.uninstalling ? qsTr("正在移除程序文件，请保持窗口开启。")
-                                     : qsTr("请保持窗口开启。安装过程不会上传本机项目或用户预设。")
+                heading: ctl.uninstalling ? qsTr("Uninstalling OrbbecSlicer")
+                           : ctl.runMode === "repair" ? qsTr("Repairing OrbbecSlicer")
+                           : ctl.runMode === "upgrade" ? qsTr("Upgrading OrbbecSlicer")
+                           : ctl.runMode === "downgrade" ? qsTr("Downgrading OrbbecSlicer")
+                           : qsTr("Installing OrbbecSlicer")
+                lead: ctl.uninstalling ? qsTr("Removing program files, please keep this window open.")
+                                     : qsTr("Please keep this window open. The installation does not upload local projects or user presets.")
                 onCancelRequested: Host.engine.cancel()
             }
 
-            // ---- 安装/维护完成 ----
+            // ---- Install/Maintenance complete ----
             CompletePage {
                 visible: ctl.view === "complete"
-                title: ctl.runMode === "repair" ? qsTr("修复完成")
-                         : ctl.runMode === "upgrade" ? qsTr("升级完成")
-                         : ctl.runMode === "downgrade" ? qsTr("降级完成")
-                         : qsTr("安装完成")
-                description: ctl.runMode === "repair" ? qsTr("修复完成，原有配置可继续使用。")
-                               : ctl.runMode === "upgrade" ? qsTr("升级完成，兼容配置已迁移。")
-                               : ctl.runMode === "downgrade" ? qsTr("降级完成，配置快照已保留。")
-                               : qsTr("OrbbecSlicer 已准备就绪。")
-                primaryText: qsTr("立即启动")
+                title: ctl.runMode === "repair" ? qsTr("Repair complete")
+                         : ctl.runMode === "upgrade" ? qsTr("Upgrade complete")
+                         : ctl.runMode === "downgrade" ? qsTr("Downgrade complete")
+                         : qsTr("Installation complete")
+                description: ctl.runMode === "repair" ? qsTr("Repair complete; existing settings remain usable.")
+                               : ctl.runMode === "upgrade" ? qsTr("Upgrade complete; compatible settings were migrated.")
+                               : ctl.runMode === "downgrade" ? qsTr("Downgrade complete; a settings snapshot was retained.")
+                               : qsTr("OrbbecSlicer is ready.")
+                primaryText: qsTr("Launch now")
                 onPrimaryAction: {
                     if (!Host.launchApp(ctl.installOptions.installDir.length
                                         ? ctl.installOptions.installDir : ctl.installed.installDir)) {
@@ -166,7 +166,7 @@ ApplicationWindow {
                 }
             }
 
-            // ---- 安装未完成 ----
+            // ---- Installation incomplete ----
             FailurePage {
                 visible: ctl.view === "failure"
                 errorCode: ctl.failureCodeText
@@ -175,7 +175,7 @@ ApplicationWindow {
                 onRetryRequested: ctl.retry()
             }
 
-            // ---- 卸载：数据范围 ----
+            // ---- Uninstall: data scope ----
             DataScopePage {
                 visible: ctl.view === "dataScope"
                 removeAllData: ctl.removeAllData
@@ -184,7 +184,7 @@ ApplicationWindow {
                 onCancelRequested: Qt.quit()
             }
 
-            // ---- 卸载：确认 ----
+            // ---- Uninstall: confirmation ----
             UninstallConfirmPage {
                 visible: ctl.view === "confirm"
                 removeAllData: ctl.removeAllData
@@ -195,15 +195,15 @@ ApplicationWindow {
                 onConfirmRequested: ctl.beginUninstall()
             }
 
-            // ---- 卸载完成 ----
+            // ---- Uninstall complete ----
             CompletePage {
                 visible: ctl.view === "uninstalled"
-                title: qsTr("卸载完成")
+                title: qsTr("Uninstall complete")
                 description: ctl.removeAllData
-                           ? qsTr("程序文件已移除，本机应用数据已清除。")
-                           : qsTr("程序文件已移除，个人预设和偏好已保留。")
-                primaryText: qsTr("结束")
-                secondaryText: qsTr("查看文件")
+                           ? qsTr("Program files have been removed; local application data was purged.")
+                           : qsTr("Program files have been removed; personal presets and preferences were retained.")
+                primaryText: qsTr("Finish")
+                secondaryText: qsTr("View files")
                 showSecondary: ctl.keepDataDir
                 onPrimaryAction: Qt.quit()
                 onSecondaryAction: Host.revealLogs()

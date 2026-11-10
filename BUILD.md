@@ -1,276 +1,276 @@
-﻿# 从 git clone 到构建出安装器
+﻿# From git clone to a built installer
 
-本文面向**只 clone 了本仓库、机器上没有任何 Qt / QIFW 工具链**的人。
-按顺序做，全流程只需要「装几个常规 Windows 开发工具 + 跑几条命令」，工具链由脚本自己下载。
+This document is for people who have **only cloned this repository and have no Qt / QIFW toolchain on the machine**.
+Follow the steps in order; the whole flow only requires "installing a few standard Windows development tools + running a few commands", and the scripts download the toolchain themselves.
 
-> 目录约定：下文用 `<repo>` 表示你的克隆目录（例如 `D:\work\install-qt`）。
-> 所有命令都在 `<repo>` 里执行，用 **Windows PowerShell 5.1**（系统自带，不是 PowerShell 7）。
+> Directory convention: below, `<repo>` means your clone directory (for example `D:\work\install-qt`).
+> All commands are run inside `<repo>`, using **Windows PowerShell 5.1** (built into the OS, not PowerShell 7).
 
 ---
 
-## 0. 先搞清楚：仓库里有什么、没有什么
+## 0. First, understand: what is and isn't in the repository
 
-| 内容 | 是否入库 | 说明 |
+| Item | Committed | Notes |
 | --- | --- | --- |
-| 打包脚本 `packaging/qifw/**/*.ps1`、`manifest.json` | ✅ | 工具链版本、下载地址、sha256 全部固定在这里 |
-| 安装器外壳源码 `packaging/qifw/setup-ui/`（Qt Quick + C++） | ✅ | 构建出单文件 `Setup.exe` 的界面部分 |
-| 一键脚本 `build-installer.bat` | ✅ | 内部先 `check-env.ps1` 再 `build-product.ps1` |
-| **Qt 6.8.3 + QIFW 4.11 工具链**（解包约 2.1 GB） | ❌ gitignore | 由 `install-toolchain.ps1` 下载到仓库内 |
-| `packaging/qifw/out/`（产物、归档缓存、日志） | ❌ gitignore | 每次构建生成 |
-| **产品本体 OrbbecSlicer 的程序树（staging）** | ❌ 不在本仓库 | 来自 `orbbecslicer` 源码仓库的构建产物 |
+| Packaging scripts `packaging/qifw/**/*.ps1`, `manifest.json` | ✅ | Toolchain versions, download URLs, and sha256 are all pinned here |
+| Installer shell source `packaging/qifw/setup-ui/` (Qt Quick + C++) | ✅ | The UI part that builds the single-file `Setup.exe` |
+| One-click script `build-installer.bat` | ✅ | Internally runs `check-env.ps1` first, then `build-product.ps1` |
+| **Qt 6.8.3 + QIFW 4.11 toolchain** (about 2.1 GB unpacked) | ❌ gitignore | Downloaded into the repository by `install-toolchain.ps1` |
+| `packaging/qifw/out/` (artifacts, archive cache, logs) | ❌ gitignore | Generated on every build |
+| **The product OrbbecSlicer's program tree (staging)** | ❌ not in this repository | Comes from the build output of the `orbbecslicer` source repository |
 
-所以 clone 之后**必须做两步**：① 取工具链；② 拿到 staging 树。
-如果你只想验证安装器本身（外壳 / 打包链路 / 冒烟包），可以跳过 ②，见 3.3、3.4。
-
----
-
-## 1. 三个必读前提
-
-1. **必须 `git clone`，不要用网页上的 "Download ZIP"。**
-   脚本靠向上查找 `.git` 来确定仓库根（`_common.ps1` 的 `Get-RepoRoot`），没有 `.git` 会直接报
-   `Cannot find the repository root (.git) walking up from ...`。
-2. **工具链只能落在仓库内。**
-   工具根固定为 `packaging/qifw/toolchain/qt`（`manifest.json` 的 `toolchainRoot`），
-   指向仓库外或绝对路径会被路径守卫拒绝。克隆到哪个盘都可以，但要预留**约 10 GB** 磁盘：
-   工具链 2.1 GB + 归档缓存 0.3 GB + staging 工作副本 0.5 GB + 安装校验目录 0.5 GB + 产物。
-3. **本仓库不改、不写产品仓库。**
-   真实打包时只**只读** staging 树和 `version.inc`，所以 staging 路径必须由你显式指定（见 3.5）。
+So after cloning you **must do two things**: ① get the toolchain; ② obtain the staging tree.
+If you only want to verify the installer itself (shell / packaging pipeline / smoke package), you can skip ②; see 3.3 and 3.4.
 
 ---
 
-## 2. 机器要求
+## 1. Three prerequisites you must read
 
-| 依赖 | 必需性 | 检测命令 | 说明 |
+1. **You must `git clone`; do not use "Download ZIP" from the web page.**
+   The scripts locate the repository root by walking up to find `.git` (`Get-RepoRoot` in `_common.ps1`); without `.git` they immediately report
+   `Cannot find the repository root (.git) walking up from ...`.
+2. **The toolchain can only live inside the repository.**
+   The tool root is fixed at `packaging/qifw/toolchain/qt` (`toolchainRoot` in `manifest.json`);
+   pointing outside the repository or using an absolute path will be rejected by the path guard. You can clone to any drive, but reserve **about 10 GB** of disk:
+   toolchain 2.1 GB + archive cache 0.3 GB + staging working copy 0.5 GB + install verification directory 0.5 GB + artifacts.
+3. **This repository does not modify or write to the product repository.**
+   During real packaging it only **reads** the staging tree and `version.inc`, so the staging path must be specified explicitly by you (see 3.5).
+
+---
+
+## 2. Machine requirements
+
+| Dependency | Necessity | Check command | Notes |
 | --- | --- | --- | --- |
-| Windows 10 1803+ / 11，64 位 | 必需 | `[Environment]::Is64BitOperatingSystem` | |
-| Windows PowerShell 5.1 | 必需 | `$PSVersionTable.PSVersion` | 系统自带；脚本按 5.1 语法写 |
-| Python 3.8+（`pip` 可用） | 必需 | `python --version` | 只用于解包 7z；缺 `py7zr` 时脚本会自动 `pip install py7zr` |
-| `curl.exe` | 必需 | `curl.exe --version` | Win10 1803+ 自带 |
-| VC++ 2015-2022 运行库 | 必需 | `Test-Path C:\Windows\System32\vcruntime140.dll` | 缺它时 Qt/QIFW 工具会报 `0xc000007b` |
-| Visual Studio 2022 +「使用 C++ 的桌面开发」 | 构建外壳时需要 | `& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property displayName` | 提供 MSVC x64 与 Ninja |
-| CMake 3.21+，**在 PATH 里** | 构建外壳时需要 | `cmake --version` | 注意：`build-setup.ps1` 是从**当前 PowerShell 的 PATH** 找 cmake，不认 VS 自带的路径 |
-| 7-Zip CLI | 可选 | `7z` | `binarycreator` 自带 7z，不装也能打包 |
-| Git | 必需 | `git --version` | |
+| Windows 10 1803+ / 11, 64-bit | Required | `[Environment]::Is64BitOperatingSystem` | |
+| Windows PowerShell 5.1 | Required | `$PSVersionTable.PSVersion` | Built into the OS; the scripts are written against 5.1 syntax |
+| Python 3.8+ (`pip` available) | Required | `python --version` | Only used to unpack 7z; if `py7zr` is missing the script automatically runs `pip install py7zr` |
+| `curl.exe` | Required | `curl.exe --version` | Built in on Win10 1803+ |
+| VC++ 2015-2022 runtime | Required | `Test-Path C:\Windows\System32\vcruntime140.dll` | Without it, Qt/QIFW tools report `0xc000007b` |
+| Visual Studio 2022 + "Desktop development with C++" | Needed when building the shell | `& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property displayName` | Provides MSVC x64 and Ninja |
+| CMake 3.21+, **on PATH** | Needed when building the shell | `cmake --version` | Note: `build-setup.ps1` looks for cmake in the **current PowerShell's PATH**, and does not recognize the path bundled with VS |
+| 7-Zip CLI | Optional | `7z` | `binarycreator` bundles its own 7z, so packaging works without it |
+| Git | Required | `git --version` | |
 
-装 CMake 最省事：`winget install --id Kitware.CMake -e`，装完**重开终端**确认 `cmake --version` 有输出。
+The easiest way to install CMake: `winget install --id Kitware.CMake -e`; after installing, **reopen the terminal** and confirm `cmake --version` prints output.
 
-> 只交付 QIFW 原生包（`-WithoutSetupUi`，即不构建 Qt 外壳）时，**VS 2022 和 CMake 都不是硬性阻塞项**：
-> `check-env.ps1` 把它们算作非阻塞提示，只影响 `Setup.exe` 那一步（3.3）。
+> When delivering only the QIFW native package (`-WithoutSetupUi`, i.e. without building the Qt shell), **neither VS 2022 nor CMake is a hard blocker**:
+> `check-env.ps1` treats them as non-blocking notices; they only affect the `Setup.exe` step (3.3).
 
 ---
 
-## 3. 五步走
+## 3. Five steps
 
-> 赶时间只看这一条：**`.\build-installer.bat install`**（取工具链 + 打包一体）。下面是分步拆解，
-> 用于排障、只做某一件事、或想看清每一步在把关什么。
+> In a hurry? Just read this one: **`.\build-installer.bat install`** (fetch toolchain + package in one go). The breakdown below
+> is for troubleshooting, for doing only one thing, or for seeing what each step is checking.
 
-### 3.1 取工具链：一条命令
+### 3.1 Get the toolchain: one command
 
 ```powershell
-git clone <仓库地址> install-qt
+git clone <repository URL> install-qt
 cd install-qt
 .\build-installer.bat install
 ```
 
-`install` 就是「先取工具链再打包」：脚本会依次下载 Qt 6.8.3 + QIFW 4.11.0、核对官方 `.sha256`、解包、
-体检、然后直接构建安装器。**不加 `install` 则只打包、不下载**（工具链已存在时用这种）。
+`install` means "fetch the toolchain first, then package": the script downloads Qt 6.8.3 + QIFW 4.11.0 in sequence, verifies the official `.sha256`, unpacks,
+runs health checks, and then builds the installer directly. **Without `install` it only packages and does not download** (use this when the toolchain already exists).
 
-- 下载源与校验值都来自官方：`download.qt.io` 的 Qt 6.8.3 `win64_msvc2022_64`（7 个归档）+ QIFW 4.11.0。
-  每个归档先核对官方 `.sha256`，不符即中止、不解包。
-- **幂等，可以随时打断再重跑**：已下载的归档在 `packaging/qifw/out/archives/` 会被跳过，
-  已存在的 Qt / QIFW 目录也会跳过。要强制重下重解：`build-installer.bat install -Force`（或删掉 `packaging/qifw/toolchain/qt`）。
-- 公司网络需要代理时，先设环境变量（`curl` 认这两个）：
+- Download sources and checksums both come from the official site: Qt 6.8.3 `win64_msvc2022_64` (7 archives) + QIFW 4.11.0 from `download.qt.io`.
+  Each archive is first verified against the official `.sha256`; a mismatch aborts immediately and nothing is unpacked.
+- **Idempotent; you can interrupt and re-run at any time**: already-downloaded archives in `packaging/qifw/out/archives/` are skipped,
+  and existing Qt / QIFW directories are also skipped. To force a re-download and re-unpack: `build-installer.bat install -Force` (or delete `packaging/qifw/toolchain/qt`).
+- If your corporate network requires a proxy, set the environment variables first (`curl` honors these two):
 
 ```powershell
 $env:HTTP_PROXY  = 'http://user:pass@proxy:8080'
 $env:HTTPS_PROXY = 'http://user:pass@proxy:8080'
 ```
 
-完成后目录形如：
+When finished, the directory looks like:
 
 ```
 packaging/qifw/toolchain/qt/6.8.3/msvc2022_64/                       Qt
 packaging/qifw/toolchain/qt/Tools/QtInstallerFramework/4.11.0/bin/   binarycreator / installerbase / archivegen / repogen
 ```
 
-> `packaging/qifw/toolchain/` 下的 4 个 ps1（`install-toolchain.ps1` / `fetch-qt-archives.ps1` /
-> `fetch-ifw.ps1` / `check-env.ps1`）是 `build-installer.bat` 的内部实现，**平时不需要单独调用**；
-> 只有排障或想单独补一半（`-SkipQt` / `-SkipIfw`）时才直接跑。
+> The 4 ps1 files under `packaging/qifw/toolchain/` (`install-toolchain.ps1` / `fetch-qt-archives.ps1` /
+> `fetch-ifw.ps1` / `check-env.ps1`) are internal implementation of `build-installer.bat` and **normally do not need to be called separately**;
+> run them directly only when troubleshooting or when you want to do just one half (`-SkipQt` / `-SkipIfw`).
 
-### 3.2 自检（退出码 0 才算可用，`build-installer.bat` 会自己跑这一步）
+### 3.2 Self-check (only exit code 0 means usable; `build-installer.bat` runs this step itself)
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\packaging\qifw\toolchain\check-env.ps1
 "exit=$LASTEXITCODE"
 ```
 
-输出分三段：`Prerequisites`（OS / MSVC / CMake / VC 运行库 / 7-Zip）、`Path guard`、`Tools`。
-`FAIL` = 阻塞项，按后面的 `->` 提示修；`WARN` = 可选，比如没装 7-Zip。
-最后一行必须是 `Overall conclusion: available`。给脚本消费时用 `-Json`。
+The output has three sections: `Prerequisites` (OS / MSVC / CMake / VC runtime / 7-Zip), `Path guard`, and `Tools`.
+`FAIL` = blocking item; fix it following the hint after `->`. `WARN` = optional, e.g. 7-Zip not installed.
+The last line must be `Overall conclusion: available`. Use `-Json` when consuming it from a script.
 
-### 3.3 只构建安装器外壳（不需要产品、不需要 staging）
+### 3.3 Build only the installer shell (no product, no staging needed)
 
-这是最快的「证明环境可用」路径：编译 Qt Quick 外壳、部署 Qt 运行时、跑全套自检。
+This is the fastest "prove the environment works" path: compile the Qt Quick shell, deploy the Qt runtime, and run the full self-check.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\packaging\qifw\setup-ui\build-setup.ps1 -Version 0.3.0-beta.5 -Selftest
 ```
 
-脚本会依次断言：CMake 配置与编译 → 中文翻译 `lrelease` 产物与 `.qm` 已嵌入 exe → QML 模块
-（QtQuick / Layouts / Controls / Controls.Basic / Dialogs）齐全 → `windeployqt` 部署 + 写 `qt.conf`
-→ 三个 exe 都带品牌图标 → `--selftest` / `--check-window` / `--uninstall --check-window` / 卸载器自检 / 进度时序 / runMode。
-任何一项不过就是非零退出，日志在 `packaging/qifw/setup-ui/out/`。
+The script asserts in sequence: CMake configure and build → Chinese translation `lrelease` output and `.qm` embedded in the exe → QML modules
+(QtQuick / Layouts / Controls / Controls.Basic / Dialogs) all present → `windeployqt` deployment + `qt.conf` written
+→ all three exes carry the brand icon → `--selftest` / `--check-window` / `--uninstall --check-window` / uninstaller self-check / progress timing / runMode.
+If any item fails it exits non-zero; logs are in `packaging/qifw/setup-ui/out/`.
 
-产物：`packaging/qifw/setup-ui/dist/`（`OrbbecSlicerSetup.exe` + Qt DLL + `qml/` + `qt.conf`，可直接双击）。
+Artifacts: `packaging/qifw/setup-ui/dist/` (`OrbbecSlicerSetup.exe` + Qt DLLs + `qml/` + `qt.conf`, can be double-clicked directly).
 
-> 换 Qt 版本或部署残留时加 `-Clean`；只想看配置是否通过加 `-ConfigureOnly`。
+> Add `-Clean` when switching Qt versions or when deployment leftovers remain; add `-ConfigureOnly` if you only want to see whether configuration passes.
 
-### 3.4 只验证 QIFW 打包链路（冒烟包，不需要产品）
+### 3.4 Verify only the QIFW packaging pipeline (smoke package, no product needed)
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\packaging\qifw\smoke\run-smoke.ps1
 ```
 
-生成一个 4 文件的迷你安装包，然后静默安装 → 逐文件校验 → 卸载 → 校验残留 → 快捷方式断言。
-产物与 `result.json` 在 `packaging/qifw/out/smoke/<时间戳>/`。
-到这一步为止，你已经验证了「工具链 + 安装/卸载链路」全部可用。
+Generates a 4-file mini installer, then silent install → per-file verification → uninstall → leftover check → shortcut assertions.
+Artifacts and `result.json` are in `packaging/qifw/out/smoke/<timestamp>/`.
+By this point you have verified that the "toolchain + install/uninstall pipeline" all works.
 
-### 3.5 真实产品打包（需要 staging 树）
+### 3.5 Real product packaging (requires a staging tree)
 
-`build-product.ps1` 需要两样只读输入：
+`build-product.ps1` needs two read-only inputs:
 
-| 输入 | 默认值 | 参数 |
+| Input | Default | Parameter |
 | --- | --- | --- |
-| 产品 staging 树（OrbbecSlicer 程序目录，含 `ob-slicer.exe`、`resources\` 等） | `D:\Orbbec\orbbecslicer\build\presets\windows-release\OrbbecSlicer` | `-StageRoot`（必须是**绝对路径**） |
-| 版本号来源 `version.inc` 里的 `set(SLICER_APP_VERSION "...")` | `D:\Orbbec\orbbecslicer\version.inc` | `-UpstreamRepo` |
+| Product staging tree (OrbbecSlicer program directory, containing `ob-slicer.exe`, `resources\`, etc.) | `D:\Orbbec\orbbecslicer\build\presets\windows-release\OrbbecSlicer` | `-StageRoot` (must be an **absolute path**) |
+| Version number source, `set(SLICER_APP_VERSION "...")` in `version.inc` | `D:\Orbbec\orbbecslicer\version.inc` | `-UpstreamRepo` |
 
-**staging 从哪来，按你手上的东西三选一：**
+**Where staging comes from — pick one of three based on what you have at hand:**
 
-**A. 有 orbbecslicer 源码仓库（推荐）** — 直接构建它的 `windows-release` preset 并安装：
+**A. You have the orbbecslicer source repository (recommended)** — build its `windows-release` preset directly and install:
 
 ```powershell
 cd D:\Orbbec\orbbecslicer
 cmake --preset windows-release
 cmake --build --preset windows-release --target install
-# 产物即 staging：D:\Orbbec\orbbecslicer\build\presets\windows-release\OrbbecSlicer
+# the output is the staging tree: D:\Orbbec\orbbecslicer\build\presets\windows-release\OrbbecSlicer
 ```
 
-（该项目的 `CMAKE_INSTALL_PREFIX` 默认就是 `${CMAKE_BINARY_DIR}/OrbbecSlicer`，
-所以 `install` 目标产出的目录就是本仓库要的 staging 形状。源码里的 `scripts\build_package.bat`
-是「构建 + NSIS 打包」的老流程，本仓库不需要 NSIS。）
+(That project's `CMAKE_INSTALL_PREFIX` defaults to `${CMAKE_BINARY_DIR}/OrbbecSlicer`,
+so the directory produced by the `install` target is exactly the staging shape this repository needs. `scripts\build_package.bat` in the source
+is the old "build + NSIS packaging" flow; this repository does not need NSIS.)
 
-**B. 只有一台机器上装好的 OrbbecSlicer** — 直接把安装目录当 staging：
+**B. You only have an installed OrbbecSlicer on one machine** — use the installation directory directly as staging:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\packaging\qifw\product\build-product.ps1 `
     -StageRoot "C:\Program Files\OrbbecSlicer" `
-    -UpstreamRepo "D:\path\to\orbbecslicer"     # 只需能读到 version.inc
+    -UpstreamRepo "D:\path\to\orbbecslicer"     # only needs to be able to read version.inc
 ```
 
-**C. 从同事机器整包拷一份 staging** — 拷到本机任意位置后用 `-StageRoot` 指过去即可。
-（`resources\images\app_logo.ico` 存在时安装器会带上品牌图标，不存在就用默认图标，不阻断。）
+**C. Copy a complete staging tree from a colleague's machine** — copy it to any location on your machine and point `-StageRoot` at it.
+(When `resources\images\app_logo.ico` exists, the installer includes the brand icon; when it does not, the default icon is used and nothing is blocked.)
 
-**一键打包**（读完 staging、构建外壳、合成单文件 `Setup.exe`、静默安装 + 逐文件比对 + 卸载回环）：
+**One-click packaging** (reads staging, builds the shell, assembles the single-file `Setup.exe`, silent install + per-file comparison + uninstall round-trip):
 
 ```powershell
-.\build-installer.bat install                    # 首次：取工具链 + 打包（一条搞定）
-.\build-installer.bat                            # 之后：工具链已就绪，直接打包
-# 指定 staging / 版本来源
+.\build-installer.bat install                    # first time: fetch toolchain + package (one command does it all)
+.\build-installer.bat                            # afterwards: toolchain already ready, package directly
+# specify staging / version source
 .\build-installer.bat -StageRoot "D:\stage\OrbbecSlicer" -UpstreamRepo "D:\src\orbbecslicer"
-# 只交付 QIFW 原生包（跳过外壳与安装校验，最快）
+# deliver only the QIFW native package (skip shell and install verification, fastest)
 .\build-installer.bat -WithoutSetupUi -SkipInstallVerify
-# 更高压缩
+# higher compression
 .\build-installer.bat -Compression 9
-# CI 里不暂停
+# do not pause in CI
 set NO_PAUSE=1
-# 忘记参数
+# forgot the parameters
 .\build-installer.bat help
 ```
 
-`install` 可以写在任意位置（后面的参数照样转发给 `build-product.ps1`）：
-`build-installer.bat install -StageRoot "D:\stage\OrbbecSlicer" -Compression 9`。
-取工具链那一步是幂等的，每次带 `install` 跑只是多做一次校验；要强制重下重解加 `-Force`。
+`install` can be placed anywhere (the parameters after it are still forwarded to `build-product.ps1`):
+`build-installer.bat install -StageRoot "D:\stage\OrbbecSlicer" -Compression 9`.
+The toolchain-fetch step is idempotent; running with `install` each time just does one extra verification; to force a re-download and re-unpack, add `-Force`.
 
-注意 `build-installer.bat` **每次都会先跑 `check-env.ps1`**，失败就直接退出，并提示你用
-`build-installer.bat install` —— 没工具链时选这个，不要自己去记 ps1 路径。
+Note that `build-installer.bat` **always runs `check-env.ps1` first**; if it fails it exits immediately and tells you to use
+`build-installer.bat install` — pick that when you have no toolchain, and don't try to remember the ps1 paths yourself.
 
-产物在 `packaging/qifw/out/product/<时间戳>/`：
+Artifacts are in `packaging/qifw/out/product/<timestamp>/`:
 
-- `OrbbecSlicer-<版本>-x64-Setup.exe` + `.sha256` —— 交付物（单文件，含界面与 Qt 运行时）
-- `OrbbecSlicer-<版本>-x64-Installer.exe` + `.sha256` —— QIFW 原生包（中间产物）
-- `result.json`（每步耗时、staging 摘要、安装/卸载校验结果）、`build-product.log`、`setup-shell.log`
+- `OrbbecSlicer-<version>-x64-Setup.exe` + `.sha256` — the deliverable (single file, including UI and Qt runtime)
+- `OrbbecSlicer-<version>-x64-Installer.exe` + `.sha256` — QIFW native package (intermediate artifact)
+- `result.json` (per-step timing, staging summary, install/uninstall verification results), `build-product.log`, `setup-shell.log`
 
-> **产物字节不可复现**：`binarycreator` 会把本次构建时间和随机临时 qrc 文件名写进产物，同样的输入每次
-> SHA-256 都不同。判断「同一份源码产出同样内容」看 `result.json` 的 `staging.digestBefore` 与
-> `installVerified` / `diffCount`，不要比 exe 的哈希；发布时必须用**当次**生成的 `.sha256`。
+> **Artifact bytes are not reproducible**: `binarycreator` writes the current build time and a random temporary qrc file name into the artifact, so the same
+> input yields a different SHA-256 every time. To judge "the same source produces the same content", look at `staging.digestBefore` in `result.json`
+> and `installVerified` / `diffCount`; do not compare the exe's hash. When releasing, you must use the `.sha256` generated by the **current** run.
 
 ---
 
-## 4. 内网 / 完全离线机器
+## 4. Intranet / fully offline machines
 
-目标机访问不了 `download.qt.io` 及其 CDN 时，**不要试着从源码构建 QIFW**（需要静态 Qt + liblzma/zlib/bzip2，
-成本远高于收益，步骤见 `packaging/qifw/README.md` 的「离线兜底」）。正确做法是搬归档：
+When the target machine cannot reach `download.qt.io` and its CDN, **do not try to build QIFW from source** (it requires a static Qt + liblzma/zlib/bzip2,
+and the cost far outweighs the benefit; steps are in "Offline fallback" in `packaging/qifw/README.md`). The correct approach is to move the archives:
 
-1. 在一台能上网的机器上按 3.1 跑一遍，得到 `packaging/qifw/out/archives/` 下 8 个 `.7z`
-   和各自的 `.sha256`（Qt 7 个 + QIFW 1 个，共约 270 MB）。
-2. 把这 16 个文件整体拷到离线机器的同一目录 `packaging/qifw/out/archives/`。
-3. 离线机器上依次执行（第一次只校验，第二次解包；归档已在缓存里就不会再下载）：
+1. On a machine with internet access, run through 3.1 once to obtain the 8 `.7z` files under `packaging/qifw/out/archives/`
+   and their respective `.sha256` files (7 for Qt + 1 for QIFW, about 270 MB in total).
+2. Copy all 16 files as a whole to the same directory `packaging/qifw/out/archives/` on the offline machine.
+3. On the offline machine, execute in sequence (the first only verifies, the second unpacks; archives already in the cache are not downloaded again):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\packaging\qifw\toolchain\fetch-qt-archives.ps1 -VerifyOnly
 powershell -ExecutionPolicy Bypass -File .\packaging\qifw\toolchain\install-toolchain.ps1
 ```
 
-4. 离线机器如果连 PyPI 也访问不了，需要先离线装好 `py7zr`：`pip install py7zr`（或拷 wheel 到本机
-   `pip install py7zr-*.whl`），否则解包那一步会失败。
+4. If the offline machine also cannot reach PyPI, you need to install `py7zr` offline first: `pip install py7zr` (or copy the wheel to the machine and
+   `pip install py7zr-*.whl`), otherwise the unpack step will fail.
 
 ---
 
-## 5. 常见报错 → 处理
+## 5. Common errors → handling
 
-| 报错 / 现象 | 原因与处理 |
+| Error / symptom | Cause and handling |
 | --- | --- |
-| `Cannot find the repository root (.git) walking up from ...` | 用了 ZIP 下载或不在克隆目录里运行 → `git clone`，命令在 `<repo>` 下执行 |
-| `python not found (3.8+). Install it and add it to PATH.` | 装 Python 并勾选 Add to PATH，重开终端 |
-| `pip install py7zr failed` | 内网无 PyPI：手动装 `py7zr` 后再跑，见第 4 节 |
-| `curl.exe not found` | 系统太老或 PATH 被改；可从 `C:\Windows\System32\curl.exe` 确认 |
-| `Archive verification failed, extraction aborted.` | 下载被代理/网关篡改（拿回一个 HTML 页）。删掉该 `.7z` 与其 `.sha256` 再重跑 |
-| `0xc000007b` / `not a valid Win32` / 工具一启动就崩 | 缺 VC++ 运行库 → 装 Microsoft Visual C++ 2015-2022 Redistributable (x64) |
-| `vswhere.exe not found` / `vswhere found no Visual Studio instance with MSVC x64 tools` | 装 VS 2022 并勾选「使用 C++ 的桌面开发」 |
-| `cmake.exe not found in PATH (3.21+ required)` | 装 CMake 或把 VS 自带 CMake 加入系统 PATH；注意它检查的是**当前终端**的 PATH |
-| `lrelease.exe not found in ...\bin` / `Incomplete Qt directory, missing bin\...` | Qt 解包不完整 → `build-installer.bat install -Force` 重取 |
-| `Translation source not found: ...translations\OrbbecSlicerSetup_zh_CN.ts` | 克隆里缺 `translations/`（见第 6 节） |
-| `Staging tree does not exist:` / `Staging tree ... must be an absolute path` | `-StageRoot` 给相对路径或指错目录 |
-| `Version source not found: ...\version.inc` | `-UpstreamRepo` 指到了没有 `version.inc` 的目录 |
-| `Toolchain does not match the manifest registration` | 目录里是别的 Qt/QIFW 版本 → `build-installer.bat install -Force` 重取 |
-| `Environment check failed` + `Missing ... binarycreator.exe` | 还没下载工具链 → `build-installer.bat install` |
-| `binarycreator` 只打印 `Usage:` 然后退出 1 | 参数写错（脚本里已固定为 `-c <config.xml 文件> -p <packages> -t <installerbase.exe> --ac <0\|1\|3\|5\|7\|9>`；`--ac` 不支持 2 和 4） |
-| 静默安装后没有 `maintenancetool.exe`、`diffCount>0` | 常见于杀毒软件中途杀掉解包进程。脚本已自动清理重试一次；仍失败就把仓库目录与 `%TEMP%` 加入杀软白名单 |
-| `Failed to assemble Setup.exe` / `Shell build failed` | 看 `build-product.log` 与 `setup-shell.log`；多数是外壳侧问题，可先单独跑 3.3 定位 |
+| `Cannot find the repository root (.git) walking up from ...` | ZIP download was used, or the command is not run in the clone directory → `git clone`, and run the command under `<repo>` |
+| `python not found (3.8+). Install it and add it to PATH.` | Install Python and check Add to PATH, then reopen the terminal |
+| `pip install py7zr failed` | No PyPI on the intranet: install `py7zr` manually and run again, see section 4 |
+| `curl.exe not found` | OS too old or PATH modified; confirm from `C:\Windows\System32\curl.exe` |
+| `Archive verification failed, extraction aborted.` | Download tampered with by a proxy/gateway (you got back an HTML page). Delete that `.7z` and its `.sha256`, then re-run |
+| `0xc000007b` / `not a valid Win32` / tools crash as soon as they start | Missing VC++ runtime → install Microsoft Visual C++ 2015-2022 Redistributable (x64) |
+| `vswhere.exe not found` / `vswhere found no Visual Studio instance with MSVC x64 tools` | Install VS 2022 and check "Desktop development with C++" |
+| `cmake.exe not found in PATH (3.21+ required)` | Install CMake or add VS's bundled CMake to the system PATH; note that it checks the **current terminal's** PATH |
+| `lrelease.exe not found in ...\bin` / `Incomplete Qt directory, missing bin\...` | Qt unpack incomplete → `build-installer.bat install -Force` to fetch again |
+| `Translation source not found: ...translations\OrbbecSlicerSetup_zh_CN.ts` | The clone is missing `translations/` (see section 6) |
+| `Staging tree does not exist:` / `Staging tree ... must be an absolute path` | `-StageRoot` was given a relative path or points to the wrong directory |
+| `Version source not found: ...\version.inc` | `-UpstreamRepo` points to a directory without `version.inc` |
+| `Toolchain does not match the manifest registration` | The directory contains another Qt/QIFW version → `build-installer.bat install -Force` to fetch again |
+| `Environment check failed` + `Missing ... binarycreator.exe` | The toolchain has not been downloaded yet → `build-installer.bat install` |
+| `binarycreator` only prints `Usage:` and then exits 1 | Wrong arguments (the script already fixes them as `-c <config.xml file> -p <packages> -t <installerbase.exe> --ac <0\|1\|3\|5\|7\|9>`; `--ac` does not support 2 and 4) |
+| No `maintenancetool.exe` after silent install, `diffCount>0` | Commonly caused by antivirus killing the unpack process midway. The script already cleans up and retries once automatically; if it still fails, add the repository directory and `%TEMP%` to the antivirus whitelist |
+| `Failed to assemble Setup.exe` / `Shell build failed` | Check `build-product.log` and `setup-shell.log`; most are shell-side issues, so run 3.3 alone first to locate them |
 
 ---
 
-## 6. 产物、清理与提交前检查
+## 6. Artifacts, cleanup, and pre-commit checks
 
 ```powershell
-# 全量清理（回到「只有源码」的状态）
+# full cleanup (back to the "source only" state)
 Remove-Item -Recurse -Force .\packaging\qifw\toolchain\qt, .\packaging\qifw\out, `
     .\packaging\qifw\setup-ui\build, .\packaging\qifw\setup-ui\dist, .\packaging\qifw\setup-ui\out
 ```
 
-脚本的写入边界：工具根、`out/`、`staging-work/`、临时安装目录全部在仓库内，越界路径会被拒绝；
-唯一例外是 `binarycreator` 自己创建的 `%TEMP%\binarycreator-*`（无参数可关，退出时自动删除）。
+Script write boundaries: the tool root, `out/`, `staging-work/`, and temporary install directories are all inside the repository; out-of-bounds paths are rejected;
+the only exception is `%TEMP%\binarycreator-*` created by `binarycreator` itself (it cannot be turned off with a parameter and is deleted automatically on exit).
 
-**维护者提交前请确认**：`packaging/qifw/setup-ui/translations/OrbbecSlicerSetup_zh_CN.ts` 必须入库
-（`build-setup.ps1` 硬依赖它，缺失直接 fail）。当前已入库；改动界面文案并重新 `lupdate` 之后记得一起提交：
+**Maintainers, please confirm before committing**: `packaging/qifw/setup-ui/translations/OrbbecSlicerSetup_zh_CN.ts` must be committed
+(`build-setup.ps1` hard-depends on it and fails immediately if it is missing). It is currently committed; after changing UI text and re-running `lupdate`, remember to commit it together:
 
 ```powershell
 git status --short packaging/qifw/setup-ui/translations
 ```
 
-入库/不入库的边界就是：**只放文本与小体积素材，不放可重建的二进制与产物**。
-因此 `packaging/qifw/toolchain/qt/`、`packaging/qifw/out/`（trash 与缓存）、
-`setup-ui/build/`、`setup-ui/dist/`、`setup-ui/out/` 都在 `.gitignore` 里。
+The committed/not-committed boundary is: **only text and small assets, no rebuildable binaries or artifacts**.
+Therefore `packaging/qifw/toolchain/qt/`, `packaging/qifw/out/` (trash and cache),
+`setup-ui/build/`, `setup-ui/dist/`, `setup-ui/out/` are all in `.gitignore`.
 
-更多细节（QIFW 命令行约定、外壳单文件格式、语言与翻译、为什么不用 aqt、离线兜底）见
-`packaging/qifw/README.md`。
+For more details (QIFW command-line conventions, shell single-file format, languages and translations, why not aqt, offline fallback), see
+`packaging/qifw/README.md`.

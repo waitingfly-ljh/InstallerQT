@@ -1,6 +1,8 @@
-﻿// 安装器外壳入口。
-// 职责只有三件：解析自己的命令行、决定"开发模式 / 已打包模式"、把宿主对象交给 QML。
-// 界面逻辑在根目录 QML 与 pages/ 下，安装/卸载的进程管理在 setupengine.cpp。
+﻿// Installer shell entry point.
+// Only three responsibilities: parse our own command line, decide "development mode /
+// packaged mode", and hand the host objects to QML.
+// UI logic lives in the root QML files and pages/; install/uninstall process management
+// lives in setupengine.cpp.
 #include <QGuiApplication>
 #include <QIcon>
 #include <QQmlApplicationEngine>
@@ -11,8 +13,10 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QJSValue>
+#include <QLocale>
 #include <QQuickWindow>
 #include <QStandardPaths>
+#include <QTranslator>
 #include <QWindow>
 #include <QTimer>
 #include <QDebug>
@@ -35,7 +39,7 @@
 
 namespace {
 
-// 外壳启动模式：由命令行决定，QML 据此选择首屏。
+// Shell start mode: decided by the command line; QML selects the first screen from it.
 enum class StartMode { Normal, SelfTest, Help };
 
 struct LaunchPlan {
@@ -45,30 +49,32 @@ struct LaunchPlan {
     QString targetDir;
     QString payloadPath;
     QString logPath;
-    // --uninstall / --install-dir：系统卸载入口与自包含卸载器使用。
+    // --uninstall / --install-dir: used by the system uninstall entry and the self-contained uninstaller.
     bool uninstall = false;
     QString installDirOverride;
-    // --uninstaller <path>：Setup.exe 启动器解压出来的卸载器源文件（安装成功后部署）。
+    // --uninstaller <path>: uninstaller source file extracted by the Setup.exe launcher (deployed after a successful install).
     QString uninstallerPath;
-    // 是否出现 --silent（其后参数透传给引擎）。
+    // Whether --silent was given (arguments after it are passed through to the engine).
     bool silent = false;
-    // --selftest --qml-smoke [--view <name>] [--option <key>] [--dir <路径>]
+    // --selftest --qml-smoke [--view <name>] [--option <key>] [--dir <path>]
     bool qmlSmoke = false;
     QString smokeView;
     int smokeOption = 0;
     QString smokeDir;
-    // --selftest --check-options [--dir <路径>]：只做目录/空间断言，不启动安装。
+    // --selftest --check-options [--dir <path>]: only asserts directory/space, does not start the install.
     bool checkOptions = false;
-    // 自检扩展：--check-steps 验证侧栏步骤状态；--check-launch <目录> 验证启动主程序。
+    // Self-test extensions: --check-steps verifies sidebar step states; --check-launch <dir> verifies launching the main program.
     bool checkSteps = false;
     bool checkWindow = false;
     QString checkLaunchDir;
     QString checkShortcutDir;
     bool checkFinishTiming = false;
     bool checkRunMode = false;
-    // 测试钩子：静默安装时使用安装设置页的默认选项（快捷方式/.3mf/完成后启动），
-    // 供打包回路验证"安装选项在卸载时被还原"。
+    // Test hook: silent install uses the install options page defaults (shortcut/.3mf/launch after install),
+    // so the packaging loop can verify "install options are restored on uninstall".
     bool withOptions = false;
+    // --lang <code>: explicit UI language; empty means "follow the system locale, then English".
+    QString lang;
 };
 
 LaunchPlan parseArgs(QGuiApplication &app)
@@ -76,7 +82,7 @@ LaunchPlan parseArgs(QGuiApplication &app)
     LaunchPlan plan;
     const QStringList args = app.arguments();
 
-    // --silent 之后的参数（in -t <dir> / pr ...）原样透传给引擎；也支持 `--` 分隔。
+    // Arguments after --silent (in -t <dir> / pr ...) are passed through to the engine verbatim; `--` is also supported as a separator.
     QStringList own;
     QStringList passthrough;
     bool afterSeparator = false;
@@ -87,8 +93,19 @@ LaunchPlan parseArgs(QGuiApplication &app)
             afterSeparator = true;
             continue;
         }
-        if (afterSeparator)
+        if (afterSeparator) {
+            // --lang is a shell option, not an engine option: consume it wherever it appears so
+            // "--silent in -t <dir> --lang zh_CN" does not leak it into the QIFW command line.
+            if (a == QStringLiteral("--lang") && i + 1 < args.size()) {
+                plan.lang = args.at(++i);
+                continue;
+            }
+            if (a.startsWith(QStringLiteral("--lang="))) {
+                plan.lang = a.mid(7);
+                continue;
+            }
             passthrough << a;
+        }
         else
             own << a;
     }
@@ -129,6 +146,10 @@ LaunchPlan parseArgs(QGuiApplication &app)
             plan.checkRunMode = true;
         } else if (a == QStringLiteral("--with-options")) {
             plan.withOptions = true;
+        } else if (a == QStringLiteral("--lang") && i + 1 < own.size()) {
+            plan.lang = own.at(++i);
+        } else if (a.startsWith(QStringLiteral("--lang="))) {
+            plan.lang = a.mid(7);
         } else if (a == QStringLiteral("--view") && i + 1 < own.size()) {
             plan.smokeView = own.at(++i);
         } else if (a == QStringLiteral("--dir") && i + 1 < own.size()) {
@@ -152,8 +173,56 @@ LaunchPlan parseArgs(QGuiApplication &app)
     return plan;
 }
 
-// 截图模式（仅 -DORBBEC_SETUP_SHOT）：把控制器摆到某个视图。
-// 视图名与 SetupController.view 一致；uninstall-* 同时把侧栏切成卸载步骤。
+// UI language: explicit --lang wins, then the system locale (zh* -> zh_CN), then English.
+struct LanguageChoice {
+    QString code;    // "en" or "zh_CN" (or an unsupported code, which falls back later)
+    QString source;  // human-readable origin, logged so support can see why a language was picked
+};
+
+LanguageChoice resolveLanguage(const LaunchPlan &plan)
+{
+    LanguageChoice c;
+    if (!plan.lang.isEmpty()) {
+        QString code = plan.lang.trimmed();
+        if (code.startsWith(QLatin1String("zh"), Qt::CaseInsensitive))
+            code = QStringLiteral("zh_CN");
+        else if (code.startsWith(QLatin1String("en"), Qt::CaseInsensitive))
+            code = QStringLiteral("en");
+        c.code = code;
+        c.source = QStringLiteral("command line");
+        return c;
+    }
+    const QString sys = QLocale::system().name();
+    if (sys.startsWith(QLatin1String("zh"), Qt::CaseInsensitive)) {
+        c.code = QStringLiteral("zh_CN");
+        c.source = QStringLiteral("system locale");
+    } else {
+        c.code = QStringLiteral("en");
+        c.source = QStringLiteral("default");
+    }
+    return c;
+}
+
+// Installs the translator for `lang` and returns the language actually in effect. A missing or
+// unloadable .qm falls back to English with a warning: a broken translation must never block startup.
+QString installUiTranslator(QGuiApplication &app, const QString &lang)
+{
+    if (lang == QLatin1String("en"))
+        return lang;
+    auto *translator = new QTranslator(&app);
+    const QString path = QStringLiteral(":/i18n/OrbbecSlicerSetup_%1.qm").arg(lang);
+    if (translator->load(path) && app.installTranslator(translator)) {
+        qInfo().noquote() << QStringLiteral("UI language: %1 (translation loaded from %2)").arg(lang, path);
+        return lang;
+    }
+    delete translator;
+    qWarning().noquote() << QStringLiteral("UI language: %1 has no translation (%2); falling back to English")
+                                .arg(lang, path);
+    return QStringLiteral("en");
+}
+
+// Screenshot mode (only with -DORBBEC_SETUP_SHOT): place the controller at a given view.
+// View names match SetupController.view; uninstall-* also switches the sidebar to uninstall steps.
 QVariantMap shotModelFor(const QString &name)
 {
     QVariantMap m;
@@ -173,7 +242,7 @@ QVariantMap shotModelFor(const QString &name)
 }
 
 #ifdef ORBBEC_SETUP_SHOT
-// 截图单例：QML 往 capture 键写路径，窗口显示后抓一张 PNG 再退出。
+// Screenshot singleton: QML writes a path to the capture key; after the window shows, grab one PNG and quit.
 QObject *makeShotCapture(QQmlEngine *engine, QJSEngine *js)
 {
     Q_UNUSED(js)
@@ -183,20 +252,20 @@ QObject *makeShotCapture(QQmlEngine *engine, QJSEngine *js)
                          if (key != QLatin1String("capture"))
                              return;
                          const QString path = value.toString();
-                         qInfo().noquote() << "截图请求:" << path;
+                         qInfo().noquote() << "Screenshot request:" << path;
                          QTimer::singleShot(1500, map, [path]() {
                              bool saved = false;
                              for (QWindow *win : QGuiApplication::topLevelWindows()) {
                                  if (!win->isVisible())
                                      continue;
-                                 // 窗口可能还没完成第一次合成（isExposed() 为假），
-                                 // 这时 grabWindow(winId) 抓到的是背景/黑块；改为自己重绘整窗。
+                                 // The window may not have finished its first composite (isExposed() is false);
+                                 // grabWindow(winId) would then capture background/a black block, so redraw the whole window instead.
                                  auto *quick = qobject_cast<QQuickWindow *>(win);
                                  if (quick && !win->isExposed())
                                      saved = quick->grabWindow().save(path, "PNG");
                                  else
                                      saved = win->screen()->grabWindow(win->winId()).save(path, "PNG");
-                                 qInfo().noquote() << "截图已保存:" << path << saved;
+                                 qInfo().noquote() << "Screenshot saved:" << path << saved;
                                  break;
                              }
                              QCoreApplication::quit();
@@ -206,12 +275,12 @@ QObject *makeShotCapture(QQmlEngine *engine, QJSEngine *js)
 }
 #endif
 
-// 自检：把选项页摆到指定目录，读按钮可用性与原因，必要时真的点一次"安装"。
+// Self-test: place the options page at the given directory, read button availability and reason, and if needed actually click "Install" once.
 void runSelftestDrive(QQmlApplicationEngine &qml, SetupHost &host, const LaunchPlan &plan, bool checkOnly)
 {
     QObject *root = qml.rootObjects().value(0);
     if (!root) {
-        qCritical().noquote() << "SELFTEST 根对象为空";
+        qCritical().noquote() << "SELFTEST root object is null";
         QCoreApplication::exit(2);
         return;
     }
@@ -227,14 +296,14 @@ void runSelftestDrive(QQmlApplicationEngine &qml, SetupHost &host, const LaunchP
     }
     QObject *options = ctl ? ctl->property("installOptions").value<QObject *>() : nullptr;
     if (options && !plan.smokeDir.isEmpty()) {
-        // --dir 传的是"父文件夹"（与界面语义一致），最终目录由宿主按同一规则拼出。
+        // --dir passes the "parent folder" (matching UI semantics); the host composes the final directory with the same rule.
         options->setProperty("installParentDir", plan.smokeDir);
         options->setProperty("installDir", host.installDirForParent(plan.smokeDir));
     }
 
     QObject *page = root->findChild<QObject *>(QStringLiteral("optionsPage"));
     if (!page) {
-        qCritical().noquote() << "SELFTEST 未找到 optionsPage";
+        qCritical().noquote() << "SELFTEST optionsPage not found";
         QCoreApplication::exit(2);
         return;
     }
@@ -242,17 +311,17 @@ void runSelftestDrive(QQmlApplicationEngine &qml, SetupHost &host, const LaunchP
     const bool canInstall = page->property("canInstall").toBool();
     const QString problem = page->property("dirProblem").toString();
     const QString dir = page->property("installParentDir").toString();
-    // 父文件夹 → 最终安装目录：--check-options 用它断言拼接规则（不需要真的安装）。
+    // Parent folder -> final install directory: --check-options asserts the composition rule with it (no real install needed).
     const QString effectiveDir = page->property("effectiveInstallDir").toString();
-    qInfo().noquote() << QStringLiteral("SELFTEST 位置=[%1] 安装到=[%2] 按钮可用=%3 提示=%4")
+    qInfo().noquote() << QStringLiteral("SELFTEST location=[%1] installTo=[%2] canInstall=%3 problem=%4")
                              .arg(QDir::toNativeSeparators(dir), QDir::toNativeSeparators(effectiveDir))
                              .arg(canInstall ? QStringLiteral("true") : QStringLiteral("false"), problem);
-    qInfo().noquote() << QStringLiteral("SELFTEST 目录检查完成: %1 视图=%2")
+    qInfo().noquote() << QStringLiteral("SELFTEST directory check done: %1 view=%2")
                              .arg(QString::fromLatin1(root->metaObject()->className()),
                                   ctl ? ctl->property("view").toString() : QStringLiteral("?"));
     if (ctl) {
         const QVariantMap installed = ctl->property("installed").toMap();
-        qInfo().noquote() << QStringLiteral("SELFTEST 已安装: installed=%1 version=%2 dir=%3 目标版本=%4 模式=%5")
+        qInfo().noquote() << QStringLiteral("SELFTEST installed: installed=%1 version=%2 dir=%3 targetVersion=%4 mode=%5")
                                  .arg(installed.value(QStringLiteral("installed")).toBool() ? QStringLiteral("true")
                                                                                             : QStringLiteral("false"),
                                       installed.value(QStringLiteral("version")).toString(),
@@ -267,7 +336,7 @@ void runSelftestDrive(QQmlApplicationEngine &qml, SetupHost &host, const LaunchP
     }
 
     if (plan.checkSteps) {
-        // 3.6：设置 → 过程 → 完成 推进时，侧栏三步必须是 active/done/pending 的确定组合。
+        // 3.6: while advancing options -> progress -> complete, the three sidebar steps must be a definite active/done/pending combination.
         struct Case { const char *view; const char *expect; };
         const Case cases[] = {
             {"options", "active,pending,pending"},
@@ -284,7 +353,7 @@ void runSelftestDrive(QQmlApplicationEngine &qml, SetupHost &host, const LaunchP
                 states << item.toMap().value(QStringLiteral("state")).toString();
             const QString actual = states.join(QLatin1Char(','));
             const QString expect = QString::fromLatin1(c.expect);
-            qInfo().noquote() << QStringLiteral("SELFTEST 步骤 %1: %2（期望 %3）")
+            qInfo().noquote() << QStringLiteral("SELFTEST step %1: %2 (expected %3)")
                                      .arg(QString::fromLatin1(c.view), actual, expect);
             if (actual != expect)
                 ok = false;
@@ -296,7 +365,7 @@ void runSelftestDrive(QQmlApplicationEngine &qml, SetupHost &host, const LaunchP
     const auto flag = [options](const char *key) {
         return options && options->property(key).toBool();
     };
-    qInfo().noquote() << QStringLiteral("自检: 交给引擎 目录=[%1] 快捷方式=%2 .3mf=%3 .stl=%4 完成后启动=%5")
+    qInfo().noquote() << QStringLiteral("Self-test: handing to engine dir=[%1] shortcut=%2 .3mf=%3 .stl=%4 launchAfterInstall=%5")
                              .arg(QDir::toNativeSeparators(dir))
                              .arg(flag("shortcutDesktop") ? 1 : 0)
                              .arg(flag("assoc3mf") ? 1 : 0)
@@ -305,30 +374,31 @@ void runSelftestDrive(QQmlApplicationEngine &qml, SetupHost &host, const LaunchP
 
     QObject::connect(host.engine(), &SetupEngine::finished, &qml,
                      [](int code, const QString &summary) {
-                         qInfo().noquote() << QStringLiteral("SELFTEST 命中安装按钮：引擎收到 %1 %2")
+                         qInfo().noquote() << QStringLiteral("SELFTEST install button hit: engine received %1 %2")
                                                   .arg(code)
                                                   .arg(summary);
-                         // 引擎的 finished 在 QML 槽里同步发出，延到下一轮再退出，
-                         // 让控制器先把视图切到进度/失败页。
+                         // The engine's finished is emitted synchronously inside the QML slot; defer exit to the next
+                         // turn so the controller can switch the view to the progress/failure page first.
                          QTimer::singleShot(0, qApp, []() { QCoreApplication::exit(0); });
                      });
-    // 兜底：引擎没立刻结束时也要退出（例如负载存在、安装真的跑起来）。
+    // Fallback: exit even if the engine does not finish immediately (e.g. a payload exists and the install really runs).
     QTimer::singleShot(50, qApp, []() { QCoreApplication::exit(0); });
     QMetaObject::invokeMethod(page, "installRequested", Qt::DirectConnection);
 }
 
 } // namespace
 
-// 无边框窗口（Qt.FramelessWindowHint）让 Qt 不设 WS_MINIMIZEBOX，Windows 因此不把
-// 任务栏按钮点击翻译成最小化。这里补上该样式位，恢复"点任务栏最小化、再点还原"的
-// 原生行为；不加 WS_MAXIMIZEBOX —— 产品不允许最大化，加了会引入多余的系统手势。
-// 自绘标题栏的 showMinimized() 走 Qt 的窗口状态接口，与本样式位无关，不受影响。
+// A frameless window (Qt.FramelessWindowHint) makes Qt omit WS_MINIMIZEBOX, so Windows does not
+// translate a taskbar button click into a minimize. Add that style bit here to restore the native
+// "click taskbar to minimize, click again to restore" behavior; do not add WS_MAXIMIZEBOX — the
+// product does not allow maximizing, and adding it would introduce unwanted system gestures.
+// showMinimized() from the custom title bar goes through Qt's window state interface and is unaffected by this style bit.
 static void restoreTaskbarMinimize(QQuickWindow *window)
 {
     if (!window)
         return;
 #ifdef Q_OS_WIN
-    // winId() 在原生窗口尚未创建时会立即创建它；QML 里 visible: true 时通常已存在。
+    // winId() creates the native window immediately if it does not exist yet; it usually exists already when visible: true in QML.
     const HWND hwnd = reinterpret_cast<HWND>(window->winId());
     if (!hwnd)
         return;
@@ -341,10 +411,11 @@ static void restoreTaskbarMinimize(QQuickWindow *window)
 #endif
 }
 
-// 对当前所有顶层 QQuickWindow 补样式位。窗口不是 QML 根对象（App.qml 的根是 Item，
-// 窗口是内部的 ApplicationWindow），所以按 topLevelWindows() 找，而不是 rootObjects()。
-// 只处理一次：打标记后不再重复；之后连接 visibilityChanged，覆盖 Qt 在显示/状态切换时
-// 重新设置窗口样式的情况。
+// Add the style bit to all current top-level QQuickWindows. The window is not the QML root object
+// (App.qml's root is an Item; the window is an inner ApplicationWindow), so find it via
+// topLevelWindows() rather than rootObjects().
+// Handle each only once: after marking, do not repeat; then connect visibilityChanged to cover
+// cases where Qt resets the window style on show/state changes.
 static void applyTaskbarMinimizeToWindows()
 {
 #ifdef Q_OS_WIN
@@ -358,15 +429,15 @@ static void applyTaskbarMinimizeToWindows()
         restoreTaskbarMinimize(qw);
         QObject::connect(qw, &QWindow::visibilityChanged, qw,
                          [qw]() { restoreTaskbarMinimize(qw); });
-        qInfo().noquote() << QStringLiteral("任务栏最小化: 已为窗口补 WS_MINIMIZEBOX");
+        qInfo().noquote() << QStringLiteral("Taskbar minimize: added WS_MINIMIZEBOX to window");
     }
 #endif
 }
 
 int main(int argc, char *argv[])
 {
-    // --selftest 用最小平台运行：无窗口也要能完成 QML 加载。
-    // 例外：要出截图（ORBBEC_SETUP_SHOT_DIR 非空）时必须开真窗口，否则抓不到像素。
+    // --selftest runs on the minimal platform: QML must load even without a window.
+    // Exception: when a screenshot is needed (ORBBEC_SETUP_SHOT_DIR non-empty), a real window is required, otherwise no pixels can be grabbed.
     const bool wantShot = !qEnvironmentVariableIsEmpty("ORBBEC_SETUP_SHOT_DIR");
     bool wantWindowCheck = false;
     for (int i = 1; i < argc; ++i) {
@@ -386,13 +457,13 @@ int main(int argc, char *argv[])
     QCoreApplication::setApplicationName(QStringLiteral("OrbbecSlicerSetup"));
     QCoreApplication::setOrganizationName(QStringLiteral("Orbbec"));
     QCoreApplication::setApplicationVersion(QStringLiteral(ORBBEC_SETUP_VERSION));
-    // 窗口/任务栏图标：与嵌入到 exe 的品牌图标一致。
+    // Window/taskbar icon: same as the brand icon embedded in the exe.
     QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/app.ico")));
 
     const LaunchPlan plan = parseArgs(app);
 
-    // WIN32 子系统没有控制台：诊断信息写进 %LOCALAPPDATA%\Orbbec\OrbbecSlicerSetup\logs\setup-shell.log，
-    // --selftest / 截图脚本从这里读失败原因。
+    // The WIN32 subsystem has no console: diagnostics go to %LOCALAPPDATA%\Orbbec\OrbbecSlicerSetup\logs\setup-shell.log,
+    // from which --selftest / screenshot scripts read the failure reason.
     const QString logDir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
                            + QStringLiteral("/logs");
     QDir().mkpath(logDir);
@@ -407,15 +478,32 @@ int main(int argc, char *argv[])
     });
 
 
+    // Resolve and install the UI language before the QML engine exists: QML evaluates qsTr() while
+    // loading the root component, so a translator installed later would leave the first screen in English.
+    const LanguageChoice language = resolveLanguage(plan);
+    const QString uiLanguage = installUiTranslator(app, language.code);
+    qInfo().noquote() << QStringLiteral("UI language resolved: %1 (source: %2)").arg(uiLanguage, language.source);
+
+    // --selftest --lang zh_CN: prove the translation actually took effect, otherwise a missing or
+    // stale .qm would silently leave the Chinese UI in English while every other assertion still passes.
+    if (plan.mode == StartMode::SelfTest && uiLanguage == QLatin1String("zh_CN")) {
+        const QString probe = QCoreApplication::translate("AppFrame", "OrbbecSlicer Setup Wizard");
+        const bool translated = probe != QLatin1String("OrbbecSlicer Setup Wizard");
+        qInfo().noquote() << QStringLiteral("SELFTEST language: zh_CN probe=[%1] translated=%2")
+                                 .arg(probe, translated ? QStringLiteral("true") : QStringLiteral("false"));
+        if (!translated)
+            return 2;
+    }
+
     Environment env;
     SetupHost host(&env);
     if (!plan.logPath.isEmpty())
         host.engine()->setLogPath(plan.logPath);
 
-    // 静默模式：不加载界面，退出码即结果。
+    // Silent mode: do not load the UI; the exit code is the result.
     if (plan.silent || plan.silentInstall || plan.silentUninstall) {
-        // 有些失败/快速路径会在进入事件循环前同步 emit finished；记下来直接返回，
-        // 否则 exit() 早于 exec() 会被忽略，进程永远不退出。
+        // Some failure/fast paths emit finished synchronously before entering the event loop; record it and return
+        // directly, otherwise exit() before exec() is ignored and the process never quits.
         int earlyExit = -1;
         QObject::connect(host.engine(), &SetupEngine::finished, &app,
                          [&earlyExit](int code, const QString &) {
@@ -427,7 +515,7 @@ int main(int argc, char *argv[])
                              earlyExit = 1;
                              QCoreApplication::exit(1);
                          });
-        // 验证取消路径用：ORBBEC_SETUP_SELFTEST_CANCEL_MS=300 时，300ms 后请求取消。
+        // For verifying the cancel path: with ORBBEC_SETUP_SELFTEST_CANCEL_MS=300, request cancel after 300ms.
         const int cancelMs = qEnvironmentVariableIntValue("ORBBEC_SETUP_SELFTEST_CANCEL_MS");
         if (cancelMs > 0) {
             QTimer::singleShot(cancelMs, host.engine(), [&host]() { host.engine()->cancel(); });
@@ -439,8 +527,9 @@ int main(int argc, char *argv[])
                 dir = plan.installDirOverride;
             if (dir.isEmpty())
                 dir = host.installed().value(QStringLiteral("installDir")).toString();
-            // 测试钩子：静默卸载没有界面可勾选"保留用户数据文件夹"，用环境变量打开它，
-            // 让打包回路能验证"保留用户数据目录"与"安装目录整体删除"互不影响。
+            // Test hook: silent uninstall has no UI to check "keep user data folder", so enable it via an
+            // environment variable, letting the packaging loop verify "keep user data directory" and
+            // "delete the whole install directory" do not affect each other.
             const bool keepDataDir = !qEnvironmentVariableIsEmpty("ORBBEC_SETUP_SELFTEST_KEEP_DATA_DIR");
             host.engine()->startUninstall(dir, false, keepDataDir);
         } else {
@@ -459,23 +548,23 @@ int main(int argc, char *argv[])
     }
 
 
-    // --selftest --check-desktop-shortcut <目录>：验证能在桌面创建指向主程序的快捷方式。
+    // --selftest --check-desktop-shortcut <dir>: verify a desktop shortcut to the main program can be created.
     if (plan.mode == StartMode::SelfTest && !plan.checkShortcutDir.isEmpty()) {
         const bool created = host.engine()->ensureDesktopShortcut(plan.checkShortcutDir);
         const QString lnk = QDir(QStandardPaths::writableLocation(QStandardPaths::DesktopLocation))
                                 .filePath(QStringLiteral("OrbbecSlicer.lnk"));
         const bool exists = QFileInfo::exists(lnk);
-        qInfo().noquote() << QStringLiteral("SELFTEST 桌面快捷方式: 创建=%1 存在=%2 路径=%3")
+        qInfo().noquote() << QStringLiteral("SELFTEST desktop shortcut: created=%1 exists=%2 path=%3")
                                  .arg(created ? QStringLiteral("true") : QStringLiteral("false"),
                                       exists ? QStringLiteral("true") : QStringLiteral("false"),
                                       QDir::toNativeSeparators(lnk));
         return (created && exists) ? 0 : 2;
     }
 
-    // --selftest --check-launch <目录>：验证"立即启动"能拉起安装目录里的主程序。
+    // --selftest --check-launch <dir>: verify "launch now" can start the main program in the install directory.
     if (plan.mode == StartMode::SelfTest && !plan.checkLaunchDir.isEmpty()) {
         const bool ok = host.launchApp(plan.checkLaunchDir);
-        qInfo().noquote() << QStringLiteral("SELFTEST 启动主程序: %1 目录=%2")
+        qInfo().noquote() << QStringLiteral("SELFTEST launch main program: %1 dir=%2")
                                  .arg(ok ? QStringLiteral("true") : QStringLiteral("false"),
                                       QDir::toNativeSeparators(plan.checkLaunchDir));
         return ok ? 0 : 2;
@@ -484,14 +573,14 @@ int main(int argc, char *argv[])
     QQmlApplicationEngine qml(qApp);
     QObject::connect(&qml, &QQmlApplicationEngine::warnings, &app, [](const QList<QQmlError> &errs) {
         for (const QQmlError &e : errs)
-            qCritical().noquote() << "QML 警告" << e.url().toString() << e.line() << e.description();
+            qCritical().noquote() << "QML warning" << e.url().toString() << e.line() << e.description();
     });
 
     bool qmlFailed = false;
     QObject::connect(&qml, &QQmlApplicationEngine::objectCreationFailed, &app,
                      [&qmlFailed](const QUrl &url) {
                          qmlFailed = true;
-                         qCritical().noquote() << "QML 加载失败:" << url.toString();
+                         qCritical().noquote() << "QML load failed:" << url.toString();
                      });
 
 #ifdef ORBBEC_SETUP_SHOT
@@ -501,7 +590,7 @@ int main(int argc, char *argv[])
     qml.rootContext()->setContextProperty(QStringLiteral("shotModel"), shotModelFor(shotView));
 #else
     if (plan.qmlSmoke) {
-        qCritical().noquote() << "--qml-smoke 只在截图构建（-DORBBEC_SETUP_SHOT=ON）里可用";
+        qCritical().noquote() << "--qml-smoke is only available in screenshot builds (-DORBBEC_SETUP_SHOT=ON)";
         return 2;
     }
 #endif
@@ -514,6 +603,8 @@ int main(int argc, char *argv[])
     qml.rootContext()->setContextProperty(QStringLiteral("smokeDir"), plan.smokeDir);
     qml.rootContext()->setContextProperty(QStringLiteral("uninstallMode"), plan.uninstall);
     qml.rootContext()->setContextProperty(QStringLiteral("installDirPath"), plan.installDirOverride);
+    // Effective UI language ("en" / "zh_CN"): UiTheme picks its font family from it.
+    qml.rootContext()->setContextProperty(QStringLiteral("appLanguage"), uiLanguage);
     qml.rootContext()->setContextProperty(QStringLiteral("Host"), &host);
     qml.rootContext()->setContextProperty(QStringLiteral("SetupEngine"), host.engine());
 
@@ -528,19 +619,19 @@ int main(int argc, char *argv[])
     if (qmlFailed)
         return 2;
 
-    // 任务栏最小化：窗口是 QML 内部创建的 ApplicationWindow，创建时机晚于 load 返回，
-    // 且 Qt 在显示/状态切换时可能重设样式。按几个时间点扫描一次，命中即打标记并与
-    // visibilityChanged 连接，之后由窗口自己维护。
+    // Taskbar minimize: the window is an ApplicationWindow created inside QML, later than load returns,
+    // and Qt may reset the style on show/state changes. Scan at a few time points; on a hit, mark it and
+    // connect visibilityChanged, after which the window maintains itself.
     for (int delayMs : {0, 50, 200, 500, 1200}) {
         QTimer::singleShot(delayMs, &app, []() { applyTaskbarMinimizeToWindows(); });
     }
 
     if (plan.checkRunMode) {
-        // 验证"完成页用的是点击安装时固化的 runMode"，而不是安装后重算的 mode。
+        // Verify "the Complete page uses the runMode fixed when Install was clicked", not a mode recomputed after install.
         QTimer::singleShot(100, &app, [&qml]() {
             QObject *root = qml.rootObjects().value(0);
             QObject *ctl = root ? root->property("ctl").value<QObject *>() : nullptr;
-            if (!ctl) { qCritical() << "SELFTEST 未找到 controller"; QCoreApplication::exit(2); return; }
+            if (!ctl) { qCritical() << "SELFTEST controller not found"; QCoreApplication::exit(2); return; }
             ctl->setProperty("targetVersion", QStringLiteral("1.0.0"));
             const auto check = [ctl](bool installed, const QString &version, const QString &expect) {
                 QVariantMap m;
@@ -565,12 +656,12 @@ int main(int argc, char *argv[])
     }
 
     if (plan.checkFinishTiming) {
-        // 验证进度收尾：成功 600ms、失败 300ms 的停留，再切页。
+        // Verify progress finalization: dwell 600ms on success, 300ms on failure, then switch page.
         bool ok = true;
         QTimer::singleShot(100, &app, [&qml, &ok]() {
             QObject *root = qml.rootObjects().value(0);
             QObject *ctl = root ? root->property("ctl").value<QObject *>() : nullptr;
-            if (!ctl) { qCritical() << "SELFTEST 未找到 controller"; QCoreApplication::exit(2); return; }
+            if (!ctl) { qCritical() << "SELFTEST controller not found"; QCoreApplication::exit(2); return; }
             ctl->setProperty("view", "progress");
             QMetaObject::invokeMethod(ctl, "onEngineFinished", Qt::DirectConnection,
                                       Q_ARG(QVariant, 0), Q_ARG(QVariant, QString()));
@@ -581,9 +672,9 @@ int main(int argc, char *argv[])
                 QTimer::singleShot(800, ctl, [ctl, early, &ok]() {
                     const bool done = ctl->property("view").toString() == "complete"
                                       && !ctl->property("finishing").toBool();
-                    qInfo().noquote() << "SELFTEST 成功收尾: 停留=" << early << "完成页=" << done;
+                    qInfo().noquote() << "SELFTEST success finalize: dwell=" << early << "completePage=" << done;
                     if (!done) ok = false;
-                    // 失败分支
+                    // Failure branch
                     ctl->setProperty("view", "progress");
                     QMetaObject::invokeMethod(ctl, "onEngineFinished", Qt::DirectConnection,
                                               Q_ARG(QVariant, 2), Q_ARG(QVariant, QStringLiteral("boom")));
@@ -591,7 +682,7 @@ int main(int argc, char *argv[])
                         const bool stillProgress = ctl->property("view").toString() == "progress";
                         QTimer::singleShot(250, ctl, [ctl, stillProgress, &ok]() {
                             const bool failure = ctl->property("view").toString() == "failure";
-                            qInfo().noquote() << "SELFTEST 失败收尾: 停留=" << stillProgress << "失败页=" << failure;
+                            qInfo().noquote() << "SELFTEST failure finalize: dwell=" << stillProgress << "failurePage=" << failure;
                             if (!stillProgress || !failure) ok = false;
                             QCoreApplication::exit(ok ? 0 : 2);
                         });
@@ -603,18 +694,18 @@ int main(int argc, char *argv[])
     }
 
     if (plan.checkWindow) {
-        // 真实平台下确认主窗口真的显示出来（截图用的 shotWindow 不算）。
+        // On the real platform, confirm the main window actually shows (the shotWindow used for screenshots does not count).
         QTimer::singleShot(1200, &app, []() {
             bool visible = false;
             for (QWindow *w : QGuiApplication::topLevelWindows()) {
                 if (w->isVisible() && w->width() > 0 && w->height() > 0) {
                     visible = true;
-                    qInfo().noquote() << QStringLiteral("SELFTEST 主窗口可见: %1 %2x%3")
+                    qInfo().noquote() << QStringLiteral("SELFTEST main window visible: %1 %2x%3")
                                              .arg(w->title()).arg(w->width()).arg(w->height());
                 }
             }
             if (!visible)
-                qCritical().noquote() << "SELFTEST 主窗口未显示";
+                qCritical().noquote() << "SELFTEST main window not shown";
             QCoreApplication::exit(visible ? 0 : 2);
         });
         return app.exec();
@@ -628,7 +719,7 @@ int main(int argc, char *argv[])
     }
 
     if (plan.mode == StartMode::SelfTest && !plan.qmlSmoke) {
-        qInfo().noquote() << "自检: 根对象" << (qml.rootObjects().isEmpty()
+        qInfo().noquote() << "Self-test: root object" << (qml.rootObjects().isEmpty()
                                                    ? QStringLiteral("?")
                                                    : QString::fromLatin1(qml.rootObjects().first()->metaObject()->className()));
         return 0;

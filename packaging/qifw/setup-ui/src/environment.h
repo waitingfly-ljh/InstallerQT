@@ -1,5 +1,6 @@
-﻿// 安装环境探测：目标目录可写、磁盘剩余空间、已安装版本。
-// 全部同步调用且只做只读查询，UI 在启动时与目录变更时各调一次即可。
+﻿// Install environment probing: target directory writability, free disk space, installed version.
+// All calls are synchronous and read-only; the UI calls them once at startup and once per
+// directory change.
 #pragma once
 
 #include <QObject>
@@ -8,8 +9,8 @@
 
 struct InstalledInfo {
     bool installed = false;
-    QString version;     // 已安装版本（可能为空）
-    QString installDir;  // 已安装目录
+    QString version;     // installed version (may be empty)
+    QString installDir;  // installed directory
 };
 
 class Environment : public QObject
@@ -18,42 +19,47 @@ class Environment : public QObject
 public:
     explicit Environment(QObject *parent = nullptr);
 
-    // 目录可写：尝试在目录（或其最近存在的祖先）下创建并删除一个临时文件。
-    // 返回空串表示可用，否则是可显示给用户的原因（不存在的目录、不是目录、不可写）。
-    // 结果按"目录 + 祖先修改时间"缓存，绑定里反复求值不会反复写盘。
+    // Directory writability: try creating and deleting a temporary file in the directory
+    // (or its nearest existing ancestor). An empty string means usable; otherwise returns a
+    // user-displayable reason (missing directory, not a directory, not writable).
+    // Results are cached by "directory + ancestor modification time", so repeated binding
+    // evaluation does not repeatedly write to disk.
     Q_INVOKABLE QString probeDirectory(const QString &path) const;
 
-    // 指定路径所在卷的剩余字节数；无法确定时返回 -1。
+    // Remaining bytes on the volume containing the given path; returns -1 when unknown.
     Q_INVOKABLE qint64 freeBytes(const QString &path) const;
 
-    // 安装目录文本的规范化（如 "C:/Program Files/OrbbecSlicer/" → "C:\Program Files\OrbbecSlicer"）：
-    // 界面上输入的文本直接作为安装位置时，installDirChanged 要比较规范化后的值。
+    // Normalization of install directory text (e.g. "C:/Program Files/OrbbecSlicer/" → "C:\Program Files\OrbbecSlicer"):
+    // when text entered in the UI is used directly as the install location, installDirChanged
+    // must compare normalized values.
     Q_INVOKABLE QString normalizeDirPath(const QString &path) const;
 
-    // 默认安装目录：<ProgramFiles>\OrbbecSlicer
+    // Default install directory: <ProgramFiles>\OrbbecSlicer
     Q_INVOKABLE QString defaultInstallDir() const;
 
-    // 界面收集的是"父文件夹"，实际安装目录是 <父文件夹>\OrbbecSlicer。
-    // 末段已经是 OrbbecSlicer（大小写不敏感）时不再叠加，重复调用结果不变。
+    // The UI collects a "parent folder"; the actual install directory is <parent folder>\OrbbecSlicer.
+    // If the last segment is already OrbbecSlicer (case-insensitive) it is not appended again;
+    // repeated calls return the same result.
     Q_INVOKABLE QString installDirForParent(const QString &parent) const;
 
-    // 默认父文件夹（defaultInstallDir() 的父目录），供安装设置页预填。
+    // Default parent folder (parent of defaultInstallDir()), used to prefill the install options page.
     Q_INVOKABLE QString defaultInstallParent() const;
 
-    // 最终安装目录 → 父文件夹（维护/回填用）。
+    // Final install directory → parent folder (for maintenance/refill).
     Q_INVOKABLE QString installParentForDir(const QString &installDir) const;
 
-    // 版本来源：优先读注册表，退化到安装目录中的 maintenancetool.exe。
+    // Version source: prefer the registry, fall back to maintenancetool.exe in the install directory.
     Q_INVOKABLE QVariantMap installedInfo() const;
 
-    // 安装目录里的主程序名随产品而异（当前是 ob-slicer.exe，历史包是 OrbbecSlicer.exe）。
-    // 返回第一个存在的可执行文件；都不存在时返回空串。
+    // The main executable name in the install directory varies by product (currently
+    // ob-slicer.exe; legacy packages use OrbbecSlicer.exe).
+    // Returns the first existing executable; returns an empty string when none exists.
     Q_INVOKABLE QString appExecutablePath(const QString &installDir) const;
 
-    // 启动已安装的主程序；成功返回 true。
+    // Launch the installed main program; returns true on success.
     Q_INVOKABLE bool launch(const QString &program, const QStringList &args = {}) const;
 
-    // 在文件管理器中打开目录。
+    // Open the directory in the file manager.
     Q_INVOKABLE bool revealDirectory(const QString &path) const;
 
     Q_INVOKABLE QString logDirectory() const;

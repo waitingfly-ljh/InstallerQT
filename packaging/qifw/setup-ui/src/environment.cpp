@@ -18,9 +18,11 @@
 Environment::Environment(QObject *parent) : QObject(parent) {}
 
 namespace {
-// 目录探测缓存：OptionsPage 里 dirProblem 是绑定，每次属性改动都会重算；ACL 判断要枚举
-// 安全描述符，不高频重复做。键含目标目录与决定结果的祖先目录及其修改时间，
-// 目录被外部改动（新建、删除、改权限外的重建）后重新判断。
+// Directory probe cache: dirProblem in OptionsPage is a binding recomputed on every
+// property change; ACL checks enumerate security descriptors, so avoid repeating them
+// frequently. The key includes the target directory and the ancestor directory that
+// determines the result plus its modification time, so the decision is re-evaluated after
+// external changes (creation, deletion, or recreation beyond permission changes).
 struct ProbeCacheEntry {
     qint64 stamp = -1;
     QString result;
@@ -40,7 +42,7 @@ QMutex &probeCacheMutex()
 QString Environment::defaultInstallDir() const
 {
 #ifdef Q_OS_WIN
-    // ProgramFiles 默认；Problems 时退回 LOCALAPPDATA（非管理员安装的场景）。
+    // ProgramFiles by default; fall back to LOCALAPPDATA on Problems (non-admin install).
     QString pf = qEnvironmentVariable("ProgramFiles");
     if (pf.isEmpty())
         pf = QStandardPaths::writableLocation(QStandardPaths::ApplicationsLocation);
@@ -54,15 +56,16 @@ QString Environment::defaultInstallDir() const
 QString Environment::probeDirectory(const QString &path) const
 {
     if (path.trimmed().isEmpty())
-        return QStringLiteral("请填写安装位置");
+        return tr("Please specify an install location");
 
     const QFileInfo info(path);
     QString dir = info.absoluteFilePath();
-    // 向上找到第一个存在的祖先：允许创建多层新目录。
+    // Walk up to the first existing ancestor: allows creating several new directory levels.
     while (!QFileInfo(dir).exists() && dir.length() > 3)
         dir = QFileInfo(dir).absolutePath();
 
-    // 缓存键带上祖先目录的修改时间：新目录建出来或被删掉时时间会变，缓存自然失效。
+    // The cache key includes the ancestor directory's modification time: it changes when a
+    // new directory is created or deleted, so the cache is invalidated naturally.
     const QFileInfo ancestor(dir);
     const QString key = dir + QLatin1Char('\n') + path.trimmed();
     const qint64 stamp = ancestor.lastModified().toMSecsSinceEpoch()
@@ -82,34 +85,38 @@ QString Environment::probeDirectory(const QString &path) const
     };
 
     if (!ancestor.isDir())
-        return remember(QStringLiteral("%1 不是目录").arg(QDir::toNativeSeparators(dir)));
+        return remember(tr("%1 is not a directory").arg(QDir::toNativeSeparators(dir)));
     if (QFileInfo(path).exists() && !QFileInfo(path).isDir())
-        return remember(QStringLiteral("%1 已存在且不是目录").arg(QDir::toNativeSeparators(path)));
+        return remember(tr("%1 already exists and is not a directory").arg(QDir::toNativeSeparators(path)));
 
-    // 探测写权限放在实际会被写入的目录：目标已存在就测目标本身（目标内部被限制写入时也
-    // 测得到）；目标还不存在就测最近存在的祖先"能否新建子目录"（Program Files 这类位置
-    // 本身就不允许普通用户建目录，结果一致）。
-    // 不用"写一个临时文件"来判断：见 msopen.h——普通用户往受保护目录里建文件会被
-    // 提升回退"放行"，而安装程序真正写入时并不会。
+    // Probe write permission in the directory that will actually be written: if the target
+    // already exists, test the target itself (this also catches write restrictions inside
+    // the target); if the target does not exist yet, test whether the nearest existing
+    // ancestor can create a subdirectory (locations like Program Files already disallow
+    // creating directories for regular users, giving the same result).
+    // Do not use "write a temporary file" to decide: see msopen.h — a regular user creating
+    // a file in a protected directory gets elevated fallback "allow", whereas the installer
+    // does not when it actually writes.
     const QString target = info.isDir() ? info.absoluteFilePath() : dir;
     const MSOpen::Access access = MSOpen::effectiveAccess(target);
     switch (access) {
     case MSOpen::Access::ReadOnly:
-        return remember(QStringLiteral("%1 不可写，请换一个位置或以管理员身份运行安装程序")
+        return remember(tr("%1 is not writable; choose another location or run the installer as administrator")
                             .arg(QDir::toNativeSeparators(info.absoluteFilePath())));
     case MSOpen::Access::Missing:
-        return remember(QStringLiteral("%1 不可用").arg(QDir::toNativeSeparators(info.absoluteFilePath())));
+        return remember(tr("%1 is unavailable").arg(QDir::toNativeSeparators(info.absoluteFilePath())));
     case MSOpen::Access::Writable:
     case MSOpen::Access::Unknown:
         break;
     }
-    // 权限判断不出来时（旧系统、非本地卷）再试一次真实写入，作为兜底。
+    // When permission cannot be determined (legacy systems, non-local volumes), try a real
+    // write once as a fallback.
     if (access == MSOpen::Access::Unknown) {
         const QString probe = QDir(target).filePath(
             QStringLiteral(".orbbec-write-probe-%1").arg(QCoreApplication::applicationPid()));
         QFile f(probe);
         if (!f.open(QIODevice::WriteOnly))
-            return remember(QStringLiteral("%1 不可写，请换一个位置或以管理员身份运行安装程序")
+            return remember(tr("%1 is not writable; choose another location or run the installer as administrator")
                                 .arg(QDir::toNativeSeparators(info.absoluteFilePath())));
         f.close();
         QFile::remove(probe);
@@ -130,7 +137,8 @@ QString Environment::installDirForParent(const QString &parent) const
     QString base = QDir::fromNativeSeparators(parent.trimmed());
     if (base.isEmpty())
         return QString();
-    // "D:" 表示 D 盘当前目录，不是根；补分隔符后再 cleanPath，保证 "D:" 与 "D:\" 等价。
+    // "D:" means the current directory on drive D, not the root; append a separator then
+    // cleanPath so "D:" and "D:\" are equivalent.
     if (base.size() == 2 && base.at(1) == QLatin1Char(':'))
         base += QLatin1Char('/');
     base = QDir::cleanPath(base);
@@ -139,7 +147,8 @@ QString Environment::installDirForParent(const QString &parent) const
     const QString leaf = QFileInfo(base).fileName();
     if (leaf.compare(QStringLiteral("OrbbecSlicer"), Qt::CaseInsensitive) == 0)
         return QDir::toNativeSeparators(base);
-    // 盘根（"D:/"）与普通目录都先 cleanPath 再转本地分隔符，避免拼出 "D:\\OrbbecSlicer"。
+    // Drive roots ("D:/") and normal directories both go through cleanPath then native
+    // separators, avoiding a combined "D:\\OrbbecSlicer".
     return QDir::toNativeSeparators(
         QDir::cleanPath(base + QLatin1Char('/') + QStringLiteral("OrbbecSlicer")));
 }
@@ -172,7 +181,8 @@ InstalledInfo Environment::readInstalled() const
 {
     InstalledInfo info;
 #ifdef Q_OS_WIN
-    // QIFW 的注册表项与安装目录里的快捷信息都可用；这里两条路都查，取先命中的。
+    // Both QIFW's registry entry and the shortcut info in the install directory are
+    // available; query both paths here and take the first hit.
     QSettings reg(QStringLiteral("HKEY_CURRENT_USER\\Software\\Orbbec\\OrbbecSlicer"),
                   QSettings::NativeFormat);
     if (reg.contains(QStringLiteral("InstallDir"))) {
@@ -184,7 +194,8 @@ InstalledInfo Environment::readInstalled() const
     }
 #endif
     if (!info.installed) {
-        // 退化：默认安装目录里存在 maintenancetool.exe 即视为已安装，版本读其 metadata。
+        // Fallback: treat maintenancetool.exe existing in the default install directory as
+        // installed; read the version from its metadata.
         const QString dir = defaultInstallDir();
         const QFileInfo mt(dir + QStringLiteral("/maintenancetool.exe"));
         if (mt.exists()) {
@@ -237,7 +248,8 @@ bool Environment::revealDirectory(const QString &path) const
 
 QString Environment::logDirectory() const
 {
-    // 安装日志放在安装器自己的日志目录下，而不是安装目标里：卸载后仍可追溯。
+    // Install logs go under the installer's own log directory, not the install target, so
+    // they remain traceable after uninstall.
     const QString logs = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
                          + QStringLiteral("/logs");
     QDir().mkpath(logs);

@@ -1,5 +1,5 @@
 {
-  "description": "冒烟包 data/ 的固定预期清单；run-smoke.ps1 用它校验安装结果，缺文件时报出具体相对路径。",
+  "description": "Fixed expected list of the smoke package's data/; run-smoke.ps1 uses it to verify install results and reports the specific relative path when a file is missing.",
   "files": [
     {
       "path": "payload/README.txt",
