@@ -207,6 +207,7 @@ void SetupEngine::startProcess(const QString &program, const QStringList &args, 
     m_pendingLine.clear();
     setProgress(0);
     m_phase = phase;
+    m_phaseIndex = 0;
     emit phaseChanged();
     m_detail = tr("Preparing components");
     emit detailChanged();
@@ -422,6 +423,10 @@ void SetupEngine::advancePhaseFromLine(const QString &line)
     }
     if (next != m_phase) {
         m_phase = next;
+        // Keep the numeric twin in sync: the failure dialog marks its step list from this index.
+        m_phaseIndex = next == tr("Writing program files") ? 1
+                       : next == tr("Finishing configuration") ? 2
+                       : m_phaseIndex;
         emit phaseChanged();
         appendLog(QStringLiteral("Phase: %1").arg(m_phase));
         if (!m_uninstallMode) {

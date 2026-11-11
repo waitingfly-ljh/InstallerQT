@@ -52,19 +52,20 @@ qt_add_qml_module(OrbbecSlicerSetup
         App.qml
         Main.qml
         UiBtn.qml
+        UiCheck.qml
+        ErrorDialog.qml
         BrandMark.qml
         SetupController.qml
         UiTheme.qml
         LoadEntry.qml
-        StepList.qml
         QmlSmoke.qml
         AppFrame.qml
-        SideGlow.qml
+        pages/WelcomePage.qml
+        pages/LicensePage.qml
         pages/OptionsPage.qml
         pages/ProgressPage.qml
         pages/CompletePage.qml
         pages/MaintenancePage.qml
-        pages/FailurePage.qml
         pages/DataScopePage.qml
         pages/UninstallConfirmPage.qml
     SOURCES
@@ -102,35 +103,40 @@ qt_add_translations(OrbbecSlicerSetup
         App.qml
         Main.qml
         UiBtn.qml
+        UiCheck.qml
+        ErrorDialog.qml
         BrandMark.qml
         SetupController.qml
         UiTheme.qml
         LoadEntry.qml
-        StepList.qml
         QmlSmoke.qml
         AppFrame.qml
-        SideGlow.qml
+        pages/WelcomePage.qml
+        pages/LicensePage.qml
         pages/OptionsPage.qml
         pages/ProgressPage.qml
         pages/CompletePage.qml
         pages/MaintenancePage.qml
-        pages/FailurePage.qml
         pages/DataScopePage.qml
         pages/UninstallConfirmPage.qml
 )
 
-# Sidebar glow: the same formula from SideGlow.qml is pre-generated as a 228x300 PNG (AppFrame displays it stretched with Image).
-# The resource alias is fixed to /glow.png, referenced in QML as qrc:/glow.png.
+# Illustration panel and license text. Both are referenced by absolute qrc paths
+# (qrc:/wizard-art.jpg in AppFrame.qml, qrc:/eula.txt in LicensePage.qml).
+set_source_files_properties(resources/wizard-art.jpg PROPERTIES QT_RESOURCE_ALIAS wizard-art.jpg)
+set_source_files_properties(resources/eula.txt PROPERTIES QT_RESOURCE_ALIAS eula.txt)
+qt_add_resources(OrbbecSlicerSetup "wizardassets"
+    PREFIX "/"
+    FILES
+        resources/wizard-art.jpg
+        resources/eula.txt
+)
+
+# App icon. The resource alias is fixed to /app.ico.
 set_source_files_properties(resources/app.ico PROPERTIES QT_RESOURCE_ALIAS app.ico)
 qt_add_resources(OrbbecSlicerSetup "brandicon"
     PREFIX "/"
     FILES resources/app.ico
-)
-
-set_source_files_properties(resources/glow.png PROPERTIES QT_RESOURCE_ALIAS glow.png)
-qt_add_resources(OrbbecSlicerSetup "glow"
-    PREFIX "/"
-    FILES resources/glow.png
 )
 
 # QmlSmoke is only instantiated in the screenshot build; the OrbbecShot module it imports is registered at runtime.

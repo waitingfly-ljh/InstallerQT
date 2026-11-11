@@ -63,8 +63,7 @@ struct LaunchPlan {
     QString smokeDir;
     // --selftest --check-options [--dir <path>]: only asserts directory/space, does not start the install.
     bool checkOptions = false;
-    // Self-test extensions: --check-steps verifies sidebar step states; --check-launch <dir> verifies launching the main program.
-    bool checkSteps = false;
+    // Self-test extension: --check-launch <dir> verifies launching the main program.
     bool checkWindow = false;
     QString checkLaunchDir;
     QString checkShortcutDir;
@@ -126,8 +125,6 @@ LaunchPlan parseArgs(QGuiApplication &app)
             plan.qmlSmoke = true;
         } else if (a == QStringLiteral("--check-options")) {
             plan.checkOptions = true;
-        } else if (a == QStringLiteral("--check-steps")) {
-            plan.checkSteps = true;
         } else if (a == QStringLiteral("--check-window")) {
             plan.checkWindow = true;
         } else if (a == QStringLiteral("--uninstall")) {
@@ -332,33 +329,6 @@ void runSelftestDrive(QQmlApplicationEngine &qml, SetupHost &host, const LaunchP
 
     if (checkOnly) {
         QCoreApplication::exit(0);
-        return;
-    }
-
-    if (plan.checkSteps) {
-        // 3.6: while advancing options -> progress -> complete, the three sidebar steps must be a definite active/done/pending combination.
-        struct Case { const char *view; const char *expect; };
-        const Case cases[] = {
-            {"options", "active,pending,pending"},
-            {"progress", "done,active,pending"},
-            {"complete", "done,done,active"},
-        };
-        bool ok = true;
-        for (const Case &c : cases) {
-            ctl->setProperty("view", QString::fromLatin1(c.view));
-            const QVariant v = ctl->property("installSteps");
-            const QVariantList list = v.value<QJSValue>().toVariant().toList();
-            QStringList states;
-            for (const QVariant &item : list)
-                states << item.toMap().value(QStringLiteral("state")).toString();
-            const QString actual = states.join(QLatin1Char(','));
-            const QString expect = QString::fromLatin1(c.expect);
-            qInfo().noquote() << QStringLiteral("SELFTEST step %1: %2 (expected %3)")
-                                     .arg(QString::fromLatin1(c.view), actual, expect);
-            if (actual != expect)
-                ok = false;
-        }
-        QCoreApplication::exit(ok ? 0 : 2);
         return;
     }
 
@@ -605,11 +575,20 @@ int main(int argc, char *argv[])
     qml.rootContext()->setContextProperty(QStringLiteral("installDirPath"), plan.installDirOverride);
     // Effective UI language ("en" / "zh_CN"): UiTheme picks its font family from it.
     qml.rootContext()->setContextProperty(QStringLiteral("appLanguage"), uiLanguage);
+    // License text: read from the embedded resource here because XMLHttpRequest refuses qrc:/ reads
+    // unless QML_XHR_ALLOW_FILE_READ is set. LicensePage falls back to a short notice if it is empty.
+    QFile eula(QStringLiteral(":/eula.txt"));
+    QString eulaText;
+    if (eula.open(QIODevice::ReadOnly | QIODevice::Text))
+        eulaText = QString::fromUtf8(eula.readAll());
+    else
+        qWarning().noquote() << QStringLiteral("License resource missing: :/eula.txt");
+    qml.rootContext()->setContextProperty(QStringLiteral("eulaText"), eulaText);
     qml.rootContext()->setContextProperty(QStringLiteral("Host"), &host);
     qml.rootContext()->setContextProperty(QStringLiteral("SetupEngine"), host.engine());
 
     const bool driveOptions = plan.mode == StartMode::SelfTest
-                              && (plan.checkOptions || plan.checkSteps || host.selfTestOptions());
+                              && (plan.checkOptions || host.selfTestOptions());
     const QString entry = (plan.mode == StartMode::SelfTest && !driveOptions && !plan.qmlSmoke
                            && !plan.checkWindow && !plan.checkFinishTiming && !plan.checkRunMode)
                               ? QStringLiteral("LoadEntry")

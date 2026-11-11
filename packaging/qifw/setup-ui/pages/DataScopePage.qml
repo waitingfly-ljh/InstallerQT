@@ -7,16 +7,9 @@ import SetupUi
 Item {
     id: page
 
-    // The page is drawn inside AppFrame's content area (size = window − title bar/side bar/padding). But the
-    // parent size the page receives in this construction order is 0 (AppFrame's layout settles a step later, so the page's anchors.fill
-    // is not recalculated), and the content area's ColumnLayout therefore lays out to the narrowest row (97px), wrapping
-    // early wherever it would wrap. So the layout does not follow parent; it computes the content area from the window size directly. When the window size is unknown
-    // (the hidden smoke copy) it falls back to the default 940×650.
-    readonly property real contentW: (page.Window.width > 0 ? page.Window.width : theme.windowW)
-                                     - theme.sideW - theme.contentPaddingH * 2
-    readonly property real contentH: (page.Window.height > 0 ? page.Window.height : theme.windowH)
-                                     - theme.titleBarH - theme.contentPaddingV - 24
     UiTheme { id: theme }
+    width: theme.contentW
+    height: theme.contentH
     property bool removeAllData: false
     property bool keepDataDir: false
     signal modeSelected(bool removeAll)
@@ -40,8 +33,7 @@ Item {
         ]
 
     ColumnLayout {
-        width: page.contentW
-        height: page.contentH
+        anchors.fill: parent
         spacing: 0
 
         Text {
@@ -50,8 +42,8 @@ Item {
             wrapMode: Text.WordWrap
             font.family: theme.fontFamily
             font.pixelSize: theme.fontTitle
-            font.weight: Font.DemiBold
-            color: theme.text
+            font.weight: Font.Bold
+            color: theme.brand
         }
         // Lead copy (.setup-view .lead { margin: 9px 0 24px })
         Item { Layout.preferredHeight: 9 }
@@ -60,9 +52,9 @@ Item {
             text: qsTr("Choose the data scope for this machine.")
             wrapMode: Text.WordWrap
             font.family: theme.fontFamily
-            lineHeight: 1.7
+            lineHeight: 1.5
             font.pixelSize: theme.fontLead
-            color: theme.muted
+            color: theme.textBody
         }
         Item { Layout.preferredHeight: 24 }
 
@@ -225,10 +217,10 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             Layout.topMargin: 22
-            spacing: 9
+            spacing: theme.btnGap
             Item { Layout.fillWidth: true }
             UiBtn { text: qsTr("Cancel"); onClicked: page.cancelRequested() }
-            UiBtn { text: qsTr("Next"); primary: true; onClicked: page.nextRequested() }
+            UiBtn { text: qsTr("Next"); primary: true; chevron: "right"; onClicked: page.nextRequested() }
         }
     }
 }

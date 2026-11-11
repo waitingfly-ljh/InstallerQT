@@ -1,0 +1,145 @@
+// LicensePage.qml
+pragma ComponentBehavior: Bound
+import QtQuick
+import QtQuick.Layouts
+import QtQuick.Controls.Basic
+import SetupUi
+
+// License agreement (design: 许可协议). The text itself lives in resources/eula.txt (embedded as
+// qrc:/eula.txt) so the legal copy can be replaced without touching QML; the page only scrolls it.
+// main.cpp injects the file contents as the `eulaText` context property (XMLHttpRequest is blocked
+// for qrc:/ by default), and the fallback below keeps the card meaningful if that ever fails.
+// "Next" stays disabled until the acceptance box is checked.
+Item {
+    id: page
+    UiTheme { id: theme }
+
+    width: theme.contentW
+    height: theme.contentH
+
+    property bool accepted: false
+    readonly property string eulaBody: (typeof eulaText !== "undefined" && eulaText !== null
+                                        && String(eulaText).length > 0)
+                                       ? String(eulaText)
+                                       : qsTr("The license text could not be loaded. Please refer to the license file shipped with the installer.")
+
+    signal acceptToggled(bool accepted)
+    signal nextRequested()
+    signal backRequested()
+    signal cancelRequested()
+
+    ColumnLayout {
+        anchors.fill: parent
+        spacing: 0
+
+        Text {
+            Layout.fillWidth: true
+            text: qsTr("License agreement")
+            wrapMode: Text.WordWrap
+            font.family: theme.fontFamily
+            font.pixelSize: theme.fontTitle
+            font.weight: Font.Bold
+            color: theme.brand
+        }
+        Item { Layout.preferredHeight: 30 }
+
+        Text {
+            Layout.fillWidth: true
+            text: qsTr("Please read the license terms; you must accept them to continue.")
+            wrapMode: Text.WordWrap
+            lineHeight: 1.5
+            font.family: theme.fontFamily
+            // Measured on the design frame: the license lead line is 14px (the options / maintenance
+            // leads are 16px; this page carries a longer sentence).
+            font.pixelSize: theme.fontBody
+            color: theme.textBody
+        }
+        Item { Layout.preferredHeight: 4 }
+
+        // Agreement card (design: #eeeeee, 12px radius). The heading and the divider run edge to edge,
+        // the scrollable body keeps the 20px inner padding.
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.minimumHeight: 180
+            radius: theme.radiusCard
+            color: theme.cardAlt
+            clip: true
+
+            Text {
+                id: cardTitle
+                x: 20
+                y: 20
+                width: parent.width - 40
+                text: qsTr("OrbbecSlicer End User License Agreement")
+                elide: Text.ElideRight
+                font.family: theme.fontFamily
+                font.pixelSize: theme.fontCardTitle
+                font.weight: Font.DemiBold
+                color: theme.text
+            }
+
+            Rectangle {
+                id: divider
+                y: 64
+                width: parent.width
+                height: 1
+                color: theme.line
+            }
+
+            Flickable {
+                id: flick
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: divider.bottom
+                anchors.bottom: parent.bottom
+                anchors.margins: 20
+                anchors.topMargin: 20
+                clip: true
+                contentWidth: width
+                contentHeight: body.implicitHeight
+                boundsBehavior: Flickable.StopAtBounds
+                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+                Text {
+                    id: body
+                    width: flick.width - 12
+                    text: page.eulaBody
+                    wrapMode: Text.Wrap
+                    textFormat: Text.PlainText
+                    lineHeight: 1.55
+                    font.family: theme.fontFamily
+                    font.pixelSize: theme.fontBody
+                    color: theme.textBody
+                }
+            }
+        }
+
+        Item { Layout.preferredHeight: 15 }
+
+        UiCheck {
+            strong: true
+            text: qsTr("I accept the license agreement")
+            checked: page.accepted
+            // The controller owns the flag (Main binds it back), so the page never writes it locally.
+            onToggled: page.acceptToggled(!page.accepted)
+        }
+
+        Item { Layout.preferredHeight: 21 }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: theme.btnGap
+            Item { Layout.fillWidth: true }
+            UiBtn { text: qsTr("Cancel"); onClicked: page.cancelRequested() }
+            UiBtn { text: qsTr("Back"); chevron: "left"; onClicked: page.backRequested() }
+            UiBtn {
+                text: qsTr("Next")
+                primary: true
+                chevron: "right"
+                enabledState: page.accepted
+                onClicked: page.nextRequested()
+            }
+        }
+    }
+}

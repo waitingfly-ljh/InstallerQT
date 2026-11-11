@@ -1,6 +1,8 @@
 // UiTheme.qml
-// Single source of truth for visual tokens: values are taken from the :root variables of
-// the design mockup OrbbecSlicer_安装与首次设置_交互原型.html.
+// Single source of truth for visual tokens. Values come from the 11-11 installer design
+// (Figma file Mc0tBFqnQRh4b2UU4GojRw, canvas "新增（11-11）", node 7650:5224):
+//   left illustration panel 480px + right content panel 480px, content column 442px (18px left /
+//   20px right inset), brand teal #009688, 24px bold titles, 14px body, 124x44 buttons, radius 8/12/16.
 // Every page reads colors and sizes from here instead of hardcoding color values per page
 // (derived colors and status inks are centralized here as well).
 //
@@ -22,101 +24,124 @@
 import QtQuick
 
 QtObject {
-    // Brand and neutral colors
-    readonly property color brand: "#0f8f88"
-    readonly property color brandDark: "#0d6f6a"
-    readonly property color brandSoft: "#e8f7f5"
-    // Border color of .button:hover in the mockup (more saturated than brandLine, used on button hover)
-    readonly property color brandHoverLine: "#8acbc6"
-    readonly property color brandLine: "#c3e6e2"
-    readonly property color topbar: "#273438"
-    readonly property color page: "#f3f5f6"                    // backdrop outside the page (--page)
-    readonly property color surface: "#ffffff"                 // content area (mockup .setup-main background: #fff)
-    readonly property color panel: "#ffffff"
-    readonly property color line: "#dfe4e7"
-    readonly property color lineSoft: "#edf0f2"
-    readonly property color text: "#263238"
-    readonly property color textStrong: "#26383a"              // card titles (.status-card strong etc.)
-    readonly property color textBody: "#47585b"                // .retain-item
-    readonly property color panelSoft: "#fafbfb"               // .version-box background
-    readonly property color track: "#e9eeef"                   // .progress-track
-    readonly property color trackFillEnd: "#49c4bb"            // .progress-fill gradient end
-    readonly property color muted: "#7a878d"
+    // --- Brand ---
+    readonly property color brand: "#009688"
+    readonly property color brandDark: "#00796b"                // primary button hover / pressed
+    readonly property color brandHoverLine: "#4db6ac"           // secondary button hover border
+    readonly property color brandLine: "#b2dfdb"
+    readonly property color brandSoft: "#e0f2f1"
+    // Teal wash used by the dialog hint strip and the "1.8 GB" accent (design: rgba(0,150,136,.05)).
+    readonly property color brandWash: Qt.rgba(0 / 255, 150 / 255, 136 / 255, 0.05)
+
+    // --- Neutrals ---
     readonly property color white: "#ffffff"
+    readonly property color page: "#ffffff"                     // window backdrop
+    readonly property color surface: "#ffffff"                  // right content panel
+    readonly property color panel: "#ffffff"                    // input fields, secondary buttons
+    readonly property color panelSoft: "#fafbfb"                // version boxes / soft blocks
+    readonly property color card: "#f5f5f5"                     // cards (input fields, soft blocks)
+    readonly property color cardAlt: "#eeeeee"                  // license agreement card
+    readonly property color cardTeal: "#f2faf9"                 // tinted card (design: "安装包版本" box)
+    readonly property color cardBlue: "#f9fcff"                 // tinted card (design: data-retention box)
+    readonly property color cardBlueLine: "#9acdff"             // 1px border of the data-retention card (measured)
+    readonly property color btnSecondary: "#fbfbfb"             // secondary button fill (measured on every frame)
+    readonly property color btnSecondaryLine: "#ececec"         // secondary button 1px border
+    readonly property color btnDisabled: "#cccccc"              // disabled primary fill (design: #cccccc + light label)
+    readonly property color btnDisabledInk: "#eeeeee"
+    readonly property color fieldLine: "#d7d7d7"                // install-location field border (measured)
+    readonly property color fieldBtn: "#e9e9e9"                 // browse button inside the field (measured)
+    readonly property color line: "#e0e0e0"
+    readonly property color lineSoft: "#eeeeee"
+    readonly property color text: "#222222"
+    readonly property color textStrong: "#262e30"
+    readonly property color textBody: "#6b6b6c"
+    readonly property color muted: "#757575"
+    readonly property color mutedSoft: "#bdbdbd"                // dialog pending rows / window buttons
+    readonly property color inkDisabled: "#cccccc"              // disabled button label
+    readonly property color checkLine: "#6b6b6c"                // unchecked checkbox border on the options page
+    readonly property color checkLineStrong: "#009688"          // emphasised checkbox (license acceptance)
+    readonly property color track: "#eeeeee"                    // progress track
+    readonly property color trackFillEnd: "#26a69a"             // progress fill gradient end
+    readonly property color scrim: Qt.rgba(0 / 255, 0 / 255, 0 / 255, 0.5)   // dialog backdrop
+    readonly property color shadow: Qt.rgba(34 / 255, 34 / 255, 34 / 255, 0.2)
 
-    // Status colors
-    readonly property color danger: "#e5484d"
-    readonly property color dangerSoft: "#fff1f1"
-    readonly property color dangerLine: "#f6c9ca"
-    readonly property color dangerInk: "#a32a2e"
-    readonly property color warning: "#e79216"
-    readonly property color warningSoft: "#fff7e9"
-    readonly property color warningLine: "#f3dcae"
-    readonly property color warningInk: "#8a5a06"
-    readonly property color success: "#5aa900"
-    readonly property color successSoft: "#eff9e8"
-    readonly property color successInk: "#3d7a00"
-    readonly property color successLine: "#d3ecc0"
-    readonly property color info: "#2488e5"
-    readonly property color infoSoft: "#edf6ff"
-    readonly property color infoInk: "#155a9e"
-    readonly property color infoLine: "#cfe4f9"
-
-    // Interaction-derived colors
-    readonly property color brandHover: "#0e8079"
-    // Brand highlight on the dark sidebar (brandDark is nearly invisible on dark backgrounds; use a brighter teal)
-    readonly property color brandAccent: "#3fd0c4"
-    readonly property color sideGlow: Qt.rgba(55 / 255, 192 / 255, 184 / 255, 0.35)  // sidebar top-left glow
-    readonly property color titleText: "#e9eef0"
-    readonly property color titleMuted: "#d5dde0"
-    readonly property color titleLine: "#151d1f"              // title bar bottom border
-    readonly property color titleHover: Qt.rgba(1, 1, 1, 0.10) // .window-btn:hover
+    // --- Status ---
+    readonly property color danger: "#ff5038"                   // measured: dialog title + failed dot
+    readonly property color dangerSoft: "#fff1f0"
+    readonly property color dangerLine: "#ffccc7"
+    readonly property color dangerInk: "#e03a24"
+    readonly property color warning: "#fa8c16"
+    readonly property color warningSoft: "#fff7e6"
+    readonly property color warningLine: "#ffd591"
+    readonly property color warningInk: "#874d00"
+    readonly property color success: "#52c41a"
+    readonly property color successSoft: "#f6ffed"
+    readonly property color successLine: "#d9f7be"
+    readonly property color successInk: "#389e0d"
+    readonly property color info: "#1890ff"
+    readonly property color infoSoft: "#e6f7ff"
+    readonly property color infoLine: "#91d5ff"
+    readonly property color infoInk: "#0050b3"
 
     // Apply an alpha value to a token (for shadows and other places that need the same hue at a different strength).
     function alpha(c, a) { return Qt.rgba(c.r, c.g, c.b, a) }
 
-    // Dark sidebar gradient (mockup .setup-side)
-    // 175deg: top-left #184c4b -> #143c3e at 58% -> bottom-right #172d32; a radial glow from the
-    // top-left is layered on top (see AppFrame).
-    readonly property color sideTop: "#184c4b"
-    readonly property color sideMid: "#143c3e"
-    readonly property color sideBottom: "#172d32"
-    readonly property color sideActiveDot: "#0f8f88"           // .step-item.active .step-dot background
-    readonly property color sideActiveRing: "#63d7d0"
-    readonly property color sideDoneDot: Qt.rgba(15 / 255, 143 / 255, 136 / 255, 0.38)
-    readonly property color sideDoneRing: "#79bcb7"
-    readonly property color sideRing: Qt.rgba(1, 1, 1, 0.34)
-    readonly property color sidePendingInk: "#91acac"
-    readonly property color sideDoneInk: "#b8ddda"
-    readonly property color sideText: "#b8ddda"
-    readonly property color sideMuted: "#8ca9aa"               // .setup-side-foot
-    readonly property color sideLead: "#b8d2d1"
-
-    // Dimensions
-    readonly property int radius: 7
-    readonly property int windowW: 940
-    readonly property int windowH: 650
-    readonly property int windowMinW: 780
+    // --- Dimensions (design is a fixed 960x540 window) ---
+    readonly property int windowW: 960
+    readonly property int windowH: 540
+    readonly property int windowMinW: 960
     readonly property int windowMinH: 540
-    readonly property int titleBarH: 42
-    readonly property int sideW: 228
-    readonly property int contentPaddingH: 46
-    readonly property int contentPaddingV: 40
+    // Left illustration panel; the right content panel takes the rest.
+    readonly property int artW: 480
+    // Measured on the design frames: the content column starts 18px into the right panel and ends
+    // 20px before the window edge (buttons line up with x=940), so it is 442px wide.
+    readonly property int contentPaddingH: 20
+    readonly property int contentPaddingLeft: 18
+    readonly property int contentPaddingV: 18
+    readonly property int panelBottom: 20
+    readonly property real contentW: 442                        // 960 - artW - 18 - 20
+    readonly property real contentH: 502                        // 540 - contentPaddingV - panelBottom
 
-    // Fonts and font sizes
+    readonly property int radius: 8
+    readonly property int radiusBtn: 8
+    readonly property int radiusField: 8
+    readonly property int radiusCard: 12
+    readonly property int radiusDialog: 16
+    readonly property int btnW: 124
+    readonly property int btnH: 44
+    readonly property int btnGap: 14
+    readonly property int checkSize: 18
+    readonly property int checkLabelGap: 16
+    // Content rhythm shared by all pages (design: title 20..44, lead 55..73, action rows 476..520).
+    readonly property int fieldH: 34
+    // Error dialog (measured on the 配置迁移失败 frame): 558px wide (the frame's 4 steps make it 427px
+    // tall; the shell renders the engine's real phases), 21px side padding, 13px bottom padding,
+    // 79px header, 47px step rows. Inside a row: icon 12..30, label 41, divider 43..edge,
+    // status centred in a 98px cell, hint strip 62px with a 16px badge inset 15px from the top.
+    readonly property int dialogW: 558
+    readonly property int dialogPad: 21
+    readonly property int dialogPadBottom: 13
+    readonly property int dialogHeaderH: 79
+    readonly property int dialogRowH: 47
+
+    // --- Fonts and font sizes ---
     // English uses a Western font; Chinese needs a font with CJK glyphs. The language is the
     // appLanguage context property injected by main.cpp; when it is absent (isolated tests) fall back to English.
     readonly property string fontFamily: (typeof appLanguage !== "undefined" && appLanguage === "zh_CN")
                                          ? "Microsoft YaHei" : "Segoe UI"
-    readonly property int fontBody: 13
-    readonly property int fontLead: 14
-    readonly property int fontTitle: 23
-    readonly property int fontSideTitle: 25                     // .setup-side h1
+    readonly property int fontBody: 14
+    readonly property int fontLead: 16                          // page lead line (measured on 安装设置 / 升级)
+    readonly property int fontSection: 16                       // section label ("安装位置")
+    readonly property int fontTitle: 24
+    readonly property int fontWelcome: 24                       // welcome page lead line ("欢迎使用")
+    readonly property int fontHero: 30                          // welcome page product name
+    readonly property int fontCardTitle: 20                     // license card heading (measured)
     readonly property int fontSmall: 12
-    readonly property int fontFoot: 11                          // .setup-side-foot
-    readonly property int fontButton: 13
+    readonly property int fontHint: 14                          // "预计需要 1.8 GB 可用空间"
+    readonly property int fontFoot: 11
+    readonly property int fontButton: 14
 
-    // Animation
+    // --- Animation ---
     readonly property int animFast: 140
     readonly property int animNormal: 200
 }

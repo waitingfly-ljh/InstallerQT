@@ -8,16 +8,9 @@ import SetupUi
 Item {
     id: page
 
-    // The page is drawn inside AppFrame's content area (size = window − title bar/side bar/padding). But the
-    // parent size the page receives in this construction order is 0 (AppFrame's layout settles a step later, so the page's anchors.fill
-    // is not recalculated), and the content area's ColumnLayout therefore lays out to the narrowest row (97px), wrapping
-    // early wherever it would wrap. So the layout does not follow parent; it computes the content area from the window size directly. When the window size is unknown
-    // (the hidden smoke copy) it falls back to the default 940×650.
-    readonly property real contentW: (page.Window.width > 0 ? page.Window.width : theme.windowW)
-                                     - theme.sideW - theme.contentPaddingH * 2
-    readonly property real contentH: (page.Window.height > 0 ? page.Window.height : theme.windowH)
-                                     - theme.titleBarH - theme.contentPaddingV - 24
     UiTheme { id: theme }
+    width: theme.contentW
+    height: theme.contentH
     property string title: qsTr("Installation complete")
     property string description: qsTr("OrbbecSlicer is ready.")
     property string primaryText: qsTr("Launch now")
@@ -28,8 +21,7 @@ Item {
     signal secondaryAction()
 
     ColumnLayout {
-        width: page.contentW
-        height: page.contentH
+        anchors.fill: parent
         spacing: 0
 
         // Design mockup .complete-icon { margin: 34px auto 14px }—"34px" is the space above the icon; the whole
@@ -79,9 +71,9 @@ Item {
             text: page.title
             wrapMode: Text.WordWrap
             font.family: theme.fontFamily
-            font.pixelSize: theme.fontTitle + 1           // .complete-copy h2: 24px
-            font.weight: Font.DemiBold
-            color: theme.text
+            font.pixelSize: theme.fontTitle
+            font.weight: Font.Bold
+            color: theme.brand
         }
         Item { Layout.preferredHeight: 9 }
         Text {
@@ -89,10 +81,10 @@ Item {
             horizontalAlignment: Text.AlignHCenter
             text: page.description
             wrapMode: Text.WordWrap
-            lineHeight: 1.7
+            lineHeight: 1.5
             font.family: theme.fontFamily
             font.pixelSize: theme.fontLead
-            color: theme.muted
+            color: theme.textBody
         }
 
         Item { Layout.fillHeight: true }

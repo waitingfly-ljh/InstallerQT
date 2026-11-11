@@ -7,16 +7,9 @@ import SetupUi
 Item {
     id: page
 
-    // The page is drawn inside AppFrame's content area (size = window − title bar/side bar/padding). But the
-    // parent size the page receives in this construction order is 0 (AppFrame's layout settles a step later, so the page's anchors.fill
-    // is not recalculated), and the content area's ColumnLayout therefore lays out to the narrowest row (97px), wrapping
-    // early wherever it would wrap. So the layout does not follow parent; it computes the content area from the window size directly. When the window size is unknown
-    // (the hidden smoke copy) it falls back to the default 940×650.
-    readonly property real contentW: (page.Window.width > 0 ? page.Window.width : theme.windowW)
-                                     - theme.sideW - theme.contentPaddingH * 2
-    readonly property real contentH: (page.Window.height > 0 ? page.Window.height : theme.windowH)
-                                     - theme.titleBarH - theme.contentPaddingV - 24
     UiTheme { id: theme }
+    width: theme.contentW
+    height: theme.contentH
     property bool removeAllData: false
     property bool keepDataDir: false
     property string installDir: ""
@@ -31,8 +24,7 @@ Item {
         + (keepDataDir ? qsTr(" The user data folder created at install time is also kept.") : "")
 
     ColumnLayout {
-        width: page.contentW
-        height: page.contentH
+        anchors.fill: parent
         spacing: 0
 
         Text {
@@ -41,18 +33,18 @@ Item {
             wrapMode: Text.WordWrap
             font.family: theme.fontFamily
             font.pixelSize: theme.fontTitle
-            font.weight: Font.DemiBold
-            color: theme.text
+            font.weight: Font.Bold
+            color: theme.brand
         }
         Item { Layout.preferredHeight: 9 }
         Text {
             Layout.fillWidth: true
             text: qsTr("Confirm the data scope.")
             wrapMode: Text.WordWrap
-            lineHeight: 1.7
+            lineHeight: 1.5
             font.family: theme.fontFamily
             font.pixelSize: theme.fontLead
-            color: theme.muted
+            color: theme.textBody
         }
 
         Item { Layout.preferredHeight: 24 }
@@ -147,8 +139,8 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             Layout.topMargin: 22
-            spacing: 9
-            UiBtn { text: qsTr("Back"); onClicked: page.backRequested() }
+            spacing: theme.btnGap
+            UiBtn { text: qsTr("Back"); chevron: "left"; onClicked: page.backRequested() }
             Item { Layout.fillWidth: true }
             UiBtn {
                 text: qsTr("Confirm uninstall")

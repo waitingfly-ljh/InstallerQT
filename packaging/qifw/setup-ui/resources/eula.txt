@@ -1,0 +1,83 @@
+OrbbecSlicer 最终用户许可协议
+
+重要提示：请在安装或使用本软件前仔细阅读本协议。安装、复制或使用本软件的任何部分，即表示您已阅读、理解并同意接受本协议全部条款的约束。如果您不同意本协议的任何条款，请勿安装或使用本软件，并可将其退回购买处。
+
+一、许可的授予
+1.1 在您遵守本协议的前提下，奥比中光科技集团股份有限公司（以下称“许可方”）授予您一项非独占、不可转让、不可再许可的有限许可，允许您在自有或受控的计算机上安装并使用 OrbbecSlicer 软件（以下称“本软件”）。
+1.2 本许可仅授予使用权，不授予所有权。本软件及其相关文档的所有知识产权及其他权利均归许可方或其许可人所有。
+
+二、使用限制
+2.1 您不得对本软件进行反向工程、反编译或反汇编，除非相关法律明确允许且不可通过合同排除。
+2.2 您不得删除或修改本软件中的任何版权声明、商标标识或其他权利声明。
+2.3 您不得将本软件用于任何违反适用法律法规的目的，不得将本软件用于武器、军事或其他受限领域的开发与生产。
+2.4 未经许可方书面同意，您不得将本软件出租、出借、销售、分发或以其他方式提供给第三方。
+
+三、数据处理与隐私
+3.1 本软件的安装、升级、降级与卸载过程均在本地完成，不会上传您的模型文件、打印参数或自定义预设。
+3.2 本软件可能在您主动触发时收集运行日志用于故障诊断；日志内容仅包含程序运行状态信息，不包含您的模型数据。
+3.3 您对使用本软件处理的数据承担责任，并应确保您拥有处理该等数据的合法权利。
+
+四、升级、降级与配置快照
+4.1 覆盖升级前，安装程序会创建可恢复的配置快照；升级完成后，兼容的配置将被迁移到新版本。
+4.2 降级安装时，旧版本无法识别的配置项将被隔离保留，而不会被直接覆盖或删除；您可以在需要时恢复这些配置。
+4.3 卸载时，您可以选择保留或清除本地的用户数据与预设。
+
+五、免责声明
+5.1 本软件按“现状”提供，许可方不对本软件的适销性、特定用途适用性或不侵权作出任何明示或默示的保证。
+5.2 对于因使用或无法使用本软件而造成的任何间接、附带、特殊或后果性损害，许可方不承担责任，即使已被告知该等损害的可能性。
+
+六、协议的终止
+6.1 如果您违反本协议的任何条款，本协议授予的许可将自动终止。终止后，您应立即停止使用本软件并删除其全部副本。
+6.2 本协议中关于知识产权、免责声明与责任限制的条款在协议终止后继续有效。
+
+七、适用法律
+7.1 本协议的订立、效力、解释与争议解决均适用中华人民共和国法律。
+7.2 因本协议产生的争议，双方应友好协商解决；协商不成的，任何一方均可向许可方所在地有管辖权的人民法院提起诉讼。
+
+八、其他
+8.1 本协议构成双方就本软件使用达成的完整协议，并取代此前的任何口头或书面约定。
+8.2 如本协议的任何条款被认定为无效或不可执行，其余条款仍保持完全效力。
+
+Orbbec Technology Group Co., Ltd.
+
+--------------------------------------------------------------------------------
+
+OrbbecSlicer End User License Agreement
+
+IMPORTANT: Please read this agreement carefully before installing or using this software. By installing, copying or using any part of this software you acknowledge that you have read, understood and agree to be bound by all terms below. If you do not agree, do not install or use the software and return it to the place of purchase.
+
+1. Grant of License
+1.1 Subject to your compliance with this agreement, Orbbec Technology Group Co., Ltd. ("Licensor") grants you a limited, non-exclusive, non-transferable and non-sublicensable license to install and use the OrbbecSlicer software ("the Software") on computers you own or control.
+1.2 This license grants use only, not ownership. All intellectual property rights in the Software and its documentation remain with the Licensor or its licensors.
+
+2. Restrictions
+2.1 You may not reverse engineer, decompile or disassemble the Software, except where such restriction is expressly prohibited by applicable law.
+2.2 You may not remove or alter any copyright, trademark or other proprietary notices in the Software.
+2.3 You may not use the Software for any purpose that violates applicable laws, or for the development or production of weapons, military systems or other restricted applications.
+2.4 You may not rent, lease, sell, distribute or otherwise make the Software available to third parties without the prior written consent of the Licensor.
+
+3. Data and Privacy
+3.1 Installation, upgrade, downgrade and uninstall all run locally. Your model files, print parameters and custom presets are not uploaded.
+3.2 The Software may collect runtime logs for diagnostics when you explicitly trigger it. Such logs contain program state only, never your model data.
+3.3 You are responsible for the data processed with the Software and must hold the legal right to process it.
+
+4. Upgrade, Downgrade and Configuration Snapshots
+4.1 Before an in-place upgrade the installer creates a recoverable configuration snapshot; compatible settings are migrated to the new version afterwards.
+4.2 On a downgrade, settings the older version cannot read are quarantined instead of being overwritten or deleted, and can be restored when needed.
+4.3 On uninstall you may choose whether local user data and presets are kept or removed.
+
+5. Disclaimer of Warranty
+5.1 The Software is provided "as is" without any express or implied warranty, including merchantability, fitness for a particular purpose or non-infringement.
+5.2 The Licensor is not liable for any indirect, incidental, special or consequential damages arising from the use of or inability to use the Software, even if advised of the possibility of such damages.
+
+6. Termination
+6.1 This license terminates automatically if you breach any term of this agreement. Upon termination you must stop using the Software and delete all copies.
+6.2 The sections on intellectual property, disclaimer of warranty and limitation of liability survive termination.
+
+7. Governing Law
+7.1 This agreement is governed by the laws of the People's Republic of China.
+7.2 Disputes shall first be resolved through friendly negotiation; failing that, either party may bring the dispute before the competent court at the Licensor's place of business.
+
+8. Miscellaneous
+8.1 This agreement constitutes the entire agreement between the parties regarding the Software and supersedes any prior oral or written agreement.
+8.2 If any provision is held invalid or unenforceable, the remaining provisions remain in full force.

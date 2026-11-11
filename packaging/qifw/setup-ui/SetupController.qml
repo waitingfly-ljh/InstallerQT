@@ -7,60 +7,46 @@ QtObject {
     id: ctl
 
     // --- Page flow ---
-    // options | maintenance | progress | complete | failure | dataScope | confirm | uninstalled
-    property string view: "options"
+    // welcome | license | options | maintenance | progress | complete | failure | dataScope | confirm | uninstalled
+    // A fresh install walks welcome -> license -> options; an existing installation starts on maintenance.
+    // "failure" is the progress screen with the error dialog on top (Main.qml), see viewIndex.
+    property string view: "welcome"
     property bool uninstalling: false
-    readonly property var installSteps: [
-        { "label": qsTr("Install options"), "state": installStepState(0) },
-        { "label": qsTr("Installing"), "state": installStepState(1) },
-        { "label": qsTr("Finish"), "state": installStepState(2) }
-    ]
-    function installStepState(i) {
-        if (flowView === "options") return i === 0 ? "active" : "pending"
-        if (flowView === "progress") return i === 0 ? "done" : i === 1 ? "active" : "pending"
-        if (flowView === "failure") return i === 0 ? "done" : i === 1 ? "active" : "pending"
-        // complete (including maintenance completion) is always the last screen
-        return i < 2 ? "done" : "active"
-    }
-    readonly property var uninstallSteps: [
-        { "label": qsTr("Data scope"), "state": uninstallStepState(0) },
-        { "label": qsTr("Confirm uninstall"), "state": uninstallStepState(1) },
-        { "label": qsTr("Uninstall complete"), "state": uninstallStepState(2) }
-    ]
-    function uninstallStepState(i) {
-        if (flowView === "dataScope") return i === 0 ? "active" : "pending"
-        if (flowView === "confirm") return i === 0 ? "done" : i === 1 ? "active" : "pending"
-        if (flowView === "progress") return i < 2 ? "done" : "active"
-        if (flowView === "uninstalled") return i < 2 ? "done" : "active"
-        // Failure during uninstall: stay on the second step
-        return i < 2 ? "done" : "pending"
-    }
-    readonly property var steps: uninstalling ? uninstallSteps : installSteps
+    // License acceptance (fresh install only). Owned by the controller so "Back" from the options page
+    // returns to a still-accepted license page.
+    property bool licenseAccepted: false
 
     // Flow view used only for screenshots (--view): the engine is not running in screenshot mode, and ctl.view is positioned by App.qml according to --view.
-    // The sidebar step list follows it rather than ctl.view directly: the screenshot shell's pages are shown via StackLayout's currentIndex,
-    // and each page's own visible set to false does not take effect (see App.qml applyShotState).
+    // The page stack follows flowView rather than ctl.view directly: the screenshot shell's pages are shown via
+    // StackLayout's currentIndex, and each page's own visible flag is ignored by the layout (see App.qml applyShotState).
     // In normal launches setView() is never called, so it is always equal to view.
     property string flowView: view
 
     // currentIndex of the content-area StackLayout (shared by Main.qml and the screenshot shell).
-    // During screenshots App.qml calls setView() to position, and the sidebar step list is also computed from flowView.
     function setView(v) {
         view = v
         flowView = v
     }
     readonly property int viewIndex: {
         const v = flowView
-        if (v === "options") return 0
-        if (v === "maintenance") return 1
-        if (v === "progress") return 2
-        if (v === "complete") return 3
-        if (v === "failure") return 4
-        if (v === "dataScope") return 5
-        if (v === "confirm") return 6
-        if (v === "uninstalled") return 7
+        if (v === "welcome") return 0
+        if (v === "license") return 1
+        if (v === "options") return 2
+        if (v === "maintenance") return 3
+        // The failure screen is the progress screen with the error dialog on top (drawn by Main.qml).
+        if (v === "progress" || v === "failure") return 4
+        if (v === "complete") return 5
+        if (v === "dataScope") return 6
+        if (v === "confirm") return 7
+        if (v === "uninstalled") return 8
         return 0
     }
+
+    // --- Fresh-install navigation ---
+    function nextFromWelcome() { view = "license" }
+    function backFromLicense() { view = "welcome" }
+    function nextFromLicense() { if (licenseAccepted) view = "options" }
+    function backFromOptions() { view = "license" }
 
     // --- Install options ---
     property QtObject installOptions: QtObject {
@@ -108,6 +94,36 @@ QtObject {
     property int failureCode: -1
     property string failureCodeText: ""
     property string failureMessage: ""
+    // Whether the failed task was an uninstall (uninstalling is cleared before the dialog is shown).
+    property bool failureWhileUninstalling: false
+    // --- Failure dialog content (design: 配置迁移失败 popup) ---
+    // The step list mirrors the phases the engine really reports (SetupEngine::phaseIndex), so the dialog
+    // never claims progress the installer did not make:
+    //   phaseIndex 0 = preparing, 1 = writing program files, 2 = finishing configuration.
+    readonly property int failurePhase: Math.max(0, Math.min(2, Host.engine.phaseIndex))
+    readonly property string failureTitle: {
+        if (failureWhileUninstalling) return qsTr("Uninstall failed")
+        if (runMode === "upgrade") return qsTr("Upgrade failed")
+        if (runMode === "downgrade") return qsTr("Downgrade failed")
+        if (runMode === "repair") return qsTr("Repair failed")
+        return qsTr("Installation failed")
+    }
+    readonly property var failureSteps: {
+        if (failureWhileUninstalling) {
+            return [
+                { "label": qsTr("Remove program files"), "state": "failed" },
+                { "label": qsTr("Clean up installation records"), "state": "pending" }
+            ]
+        }
+        const labels = [qsTr("Prepare the installation environment"),
+                        qsTr("Write program files"),
+                        qsTr("Finish configuration")]
+        const p = failurePhase
+        const out = []
+        for (let i = 0; i < labels.length; ++i)
+            out.push({ "label": labels[i], "state": i < p ? "done" : (i === p ? "failed" : "pending") })
+        return out
+    }
     property bool removeAllData: false
     property bool keepDataDir: false
     property bool cancelled: false
@@ -139,7 +155,8 @@ QtObject {
             return
         }
         resetOptions()
-        view = installed.installed ? "maintenance" : "options"
+        licenseAccepted = false
+        view = installed.installed ? "maintenance" : "welcome"
     }
 
     function refreshInstalled() {
@@ -199,6 +216,7 @@ QtObject {
             }
             return
         }
+        failureWhileUninstalling = uninstalling
         uninstalling = false
         failureCode = code
         failureCodeText = code > 0 ? String(code) : ""

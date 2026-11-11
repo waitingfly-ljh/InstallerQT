@@ -1,11 +1,11 @@
-﻿// Main.qml
+// Main.qml
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls.Basic
 import SetupUi
 
-// Shell main window: frameless 940×650, switches pages based on controller state.
+// Shell main window: fixed 960x540 (11-11 design), frameless, switches pages based on controller state.
 // The controller is created by App.qml / QmlSmoke and its object is assigned to this window's ctl (assignment only; no required declaration needed here); this file only handles the window shell and page assembly.
 ApplicationWindow {
     id: window
@@ -28,10 +28,14 @@ ApplicationWindow {
     readonly property SetupController placeholderCtl: SetupController { }
     UiTheme { id: theme }
     visible: true
+    // The design is a fixed-size wizard; the illustration panel and the content column are laid out
+    // for exactly 960x540, so the window does not resize.
     width: theme.windowW
     height: theme.windowH
     minimumWidth: theme.windowMinW
+    maximumWidth: theme.windowMinW
     minimumHeight: theme.windowMinH
+    maximumHeight: theme.windowMinH
     title: qsTr("OrbbecSlicer Setup Wizard")
     flags: Qt.Window | Qt.FramelessWindowHint
     color: theme.page
@@ -49,165 +53,147 @@ ApplicationWindow {
         Qt.quit()
     }
 
-    // Screenshot mode is triggered in App.qml (after the window is shown and pages are positioned); this file need not know about screenshots.
-
-    // A frameless window has no system title bar: the whole content is drawn by AppFrame (the title bar is draggable).
-    // Declared directly here without wrapping in a Loader: ApplicationWindow only puts direct children into contentItem,
-    // so a shell created by a Loader is built but never enters the scene, and pages are never instantiated.
-    // It must anchor to the full window: ApplicationWindow only gives direct children a default position (0,0) and does not set a size,
-    // so an unanchored shell is 0×0, the inner layout cannot reach the content area, and pages are never created.
+    // A frameless window has no system title bar: the shell draws the 480px illustration panel (drag area)
+    // and the content panel; the window buttons live in AppFrame's top-right corner.
+    // Pages are injected through `content` (not the default property, see AppFrame.qml).
     AppFrame {
         anchors.fill: parent
-        windowTitle: ctl.view === "dataScope" || ctl.view === "confirm" || ctl.view === "uninstalled"
-                     ? qsTr("Uninstall OrbbecSlicer")
-                     : qsTr("OrbbecSlicer Setup Wizard")
-        sideHeadline: ctl.view === "dataScope" || ctl.view === "confirm"
-                      ? qsTr("Uninstall\nOrbbecSlicer")
-                      : qsTr("Let creativity\ntake shape")
-        sideFoot: {
-            if (ctl.view === "dataScope" || ctl.view === "confirm")
-                return qsTr("Uninstalling requires no sign-in\nand no internet connection")
-            return qsTr("OrbbecSlicer %1").arg(ctl.targetVersion)
-        }
-        installSteps: ctl.installSteps
-        uninstallSteps: ctl.uninstallSteps
-        onMinimizeRequested: window.showMinimized()
-        onCloseRequested: window.close()
-        style: ctl.uninstalling ? "uninstall" : "install"
 
-        StackLayout {
-            id: pageStack
-            currentIndex: {
-                const v = ctl.view
-                if (v === "options") return 0
-                if (v === "maintenance") return 1
-                if (v === "progress") return 2
-                if (v === "complete") return 3
-                if (v === "failure") return 4
-                if (v === "dataScope") return 5
-                if (v === "confirm") return 6
-                if (v === "uninstalled") return 7
-                return 0
-            }
+        content: [
+            StackLayout {
+                id: pageStack
+                anchors.fill: parent
+                currentIndex: ctl.viewIndex
 
-            // Pages compute their content-area size from the window size themselves (see the contentW/contentH notes at the top of each page);
-            // here they are only pinned horizontally into the content area, no longer anchors.fill.
-            // Page switching uses StackLayout: hidden pages do not participate in layout, only the ctl.view page is shown.
-
-            // ---- Install options ----
-            OptionsPage {
-                id: optionsPage
-                objectName: "optionsPage"
-                visible: ctl.view === "options"
-                installParentDir: ctl.installOptions.installParentDir
-                shortcutDesktop: ctl.installOptions.shortcutDesktop
-                assoc3mf: ctl.installOptions.assoc3mf
-                assocStl: ctl.installOptions.assocStl
-                launchAfterInstall: ctl.installOptions.launchAfterInstall
-                notice: ctl.cancelled ? qsTr("Installation was cancelled; written files have been removed.") : ""
-                onDirChanged: (d) => ctl.installOptions.installParentDir = d
-                onOptionChanged: (key, value) => ctl.installOptions[key] = value
-                onInstallRequested: {
-                    // When the user types without pressing Enter and then clicks Install, the input text was already synced via onDirChanged;
-                    // syncing once more here ensures the controller gets the intended install location.
-                    ctl.installOptions.installParentDir = optionsPage.installParentDir
-                    ctl.beginInstall()
+                // ---- Fresh install: welcome ----
+                WelcomePage {
+                    onNextRequested: ctl.nextFromWelcome()
+                    onCancelRequested: window.requestClose()
                 }
-            }
 
-            // ---- Maintenance: Repair / Update / Downgrade ----
-            MaintenancePage {
-                visible: ctl.view === "maintenance"
-                mode: ctl.mode === "fresh" ? "repair" : ctl.mode
-                currentVersion: ctl.installed.version
-                targetVersion: ctl.targetVersion
-                riskAcknowledged: ctl.riskAcknowledged
-                onRiskToggled: (c) => ctl.riskAcknowledged = c
-                onCancelRequested: Qt.quit()
-                onProceedRequested: {
-                    ctl.installOptions.installDir = Host.normalizeDirPath(ctl.installed.installDir)
-                    ctl.installOptions.installParentDir = Host.installParentForDir(ctl.installed.installDir)
-                    ctl.beginInstall()
+                // ---- Fresh install: license ----
+                LicensePage {
+                    accepted: ctl.licenseAccepted
+                    onAcceptToggled: (v) => ctl.licenseAccepted = v
+                    onNextRequested: ctl.nextFromLicense()
+                    onBackRequested: ctl.backFromLicense()
+                    onCancelRequested: window.requestClose()
                 }
-            }
 
-            // ---- Installing ----
-            ProgressPage {
-                visible: ctl.view === "progress"
-                progress: ctl.displayProgress
-                complete: ctl.finishing
-                heading: ctl.uninstalling ? qsTr("Uninstalling OrbbecSlicer")
-                           : ctl.runMode === "repair" ? qsTr("Repairing OrbbecSlicer")
-                           : ctl.runMode === "upgrade" ? qsTr("Upgrading OrbbecSlicer")
-                           : ctl.runMode === "downgrade" ? qsTr("Downgrading OrbbecSlicer")
-                           : qsTr("Installing OrbbecSlicer")
-                lead: ctl.uninstalling ? qsTr("Removing program files, please keep this window open.")
-                                     : qsTr("Please keep this window open. The installation does not upload local projects or user presets.")
-                onCancelRequested: Host.engine.cancel()
-            }
-
-            // ---- Install/Maintenance complete ----
-            CompletePage {
-                visible: ctl.view === "complete"
-                title: ctl.runMode === "repair" ? qsTr("Repair complete")
-                         : ctl.runMode === "upgrade" ? qsTr("Upgrade complete")
-                         : ctl.runMode === "downgrade" ? qsTr("Downgrade complete")
-                         : qsTr("Installation complete")
-                description: ctl.runMode === "repair" ? qsTr("Repair complete; existing settings remain usable.")
-                               : ctl.runMode === "upgrade" ? qsTr("Upgrade complete; compatible settings were migrated.")
-                               : ctl.runMode === "downgrade" ? qsTr("Downgrade complete; a settings snapshot was retained.")
-                               : qsTr("OrbbecSlicer is ready.")
-                primaryText: qsTr("Launch now")
-                onPrimaryAction: {
-                    if (!Host.launchApp(ctl.installOptions.installDir.length
-                                        ? ctl.installOptions.installDir : ctl.installed.installDir)) {
-                        Qt.quit()
+                // ---- Install options ----
+                OptionsPage {
+                    id: optionsPage
+                    objectName: "optionsPage"
+                    installParentDir: ctl.installOptions.installParentDir
+                    shortcutDesktop: ctl.installOptions.shortcutDesktop
+                    assoc3mf: ctl.installOptions.assoc3mf
+                    assocStl: ctl.installOptions.assocStl
+                    launchAfterInstall: ctl.installOptions.launchAfterInstall
+                    notice: ctl.cancelled ? qsTr("Installation was cancelled; written files have been removed.") : ""
+                    onDirChanged: (d) => ctl.installOptions.installParentDir = d
+                    onOptionChanged: (key, value) => ctl.installOptions[key] = value
+                    onBackRequested: ctl.backFromOptions()
+                    onCancelRequested: window.requestClose()
+                    onInstallRequested: {
+                        // When the user types without pressing Enter and then clicks Install, the input text was already synced via onDirChanged;
+                        // syncing once more here ensures the controller gets the intended install location.
+                        ctl.installOptions.installParentDir = optionsPage.installParentDir
+                        ctl.beginInstall()
                     }
                 }
-            }
 
-            // ---- Installation incomplete ----
-            FailurePage {
-                visible: ctl.view === "failure"
-                errorCode: ctl.failureCodeText
-                errorText: ctl.failureMessage
-                onOpenLogsRequested: Host.revealLogs()
-                onRetryRequested: ctl.retry()
-            }
+                // ---- Maintenance: Repair / Upgrade / Downgrade ----
+                MaintenancePage {
+                    mode: ctl.mode === "fresh" ? "repair" : ctl.mode
+                    currentVersion: ctl.installed.version
+                    targetVersion: ctl.targetVersion
+                    riskAcknowledged: ctl.riskAcknowledged
+                    onRiskToggled: (c) => ctl.riskAcknowledged = c
+                    onCancelRequested: window.requestClose()
+                    onProceedRequested: {
+                        ctl.installOptions.installDir = Host.normalizeDirPath(ctl.installed.installDir)
+                        ctl.installOptions.installParentDir = Host.installParentDirForDir(ctl.installed.installDir)
+                        ctl.beginInstall()
+                    }
+                }
 
-            // ---- Uninstall: data scope ----
-            DataScopePage {
-                visible: ctl.view === "dataScope"
-                removeAllData: ctl.removeAllData
-                onModeSelected: (removeAll) => ctl.removeAllData = removeAll
-                onNextRequested: ctl.view = "confirm"
-                onCancelRequested: Qt.quit()
-            }
+                // ---- Installing (the failure dialog is drawn on top of this page) ----
+                ProgressPage {
+                    progress: ctl.displayProgress
+                    complete: ctl.finishing
+                    heading: ctl.uninstalling ? qsTr("Uninstalling OrbbecSlicer")
+                               : ctl.runMode === "repair" ? qsTr("Repairing OrbbecSlicer")
+                               : ctl.runMode === "upgrade" ? qsTr("Upgrading OrbbecSlicer")
+                               : ctl.runMode === "downgrade" ? qsTr("Downgrading OrbbecSlicer")
+                               : qsTr("Installing OrbbecSlicer")
+                    lead: ctl.uninstalling ? qsTr("Removing program files, please keep this window open.")
+                                         : qsTr("Please keep this window open. The installation does not upload local projects or user presets.")
+                    onCancelRequested: Host.engine.cancel()
+                }
 
-            // ---- Uninstall: confirmation ----
-            UninstallConfirmPage {
-                visible: ctl.view === "confirm"
-                removeAllData: ctl.removeAllData
-                keepDataDir: ctl.keepDataDir
-                installDir: ctl.installed.installDir
-                onKeepDataDirToggled: (c) => ctl.keepDataDir = c
-                onBackRequested: ctl.view = "dataScope"
-                onConfirmRequested: ctl.beginUninstall()
-            }
+                // ---- Install/Maintenance complete ----
+                CompletePage {
+                    title: ctl.runMode === "repair" ? qsTr("Repair complete")
+                             : ctl.runMode === "upgrade" ? qsTr("Upgrade complete")
+                             : ctl.runMode === "downgrade" ? qsTr("Downgrade complete")
+                             : qsTr("Installation complete")
+                    description: ctl.runMode === "repair" ? qsTr("Repair complete; existing settings remain usable.")
+                                   : ctl.runMode === "upgrade" ? qsTr("Upgrade complete; compatible settings were migrated.")
+                                   : ctl.runMode === "downgrade" ? qsTr("Downgrade complete; the previous program can be restored from the backup.")
+                                   : qsTr("OrbbecSlicer is ready.")
+                    primaryText: qsTr("Launch now")
+                    onPrimaryAction: {
+                        if (!Host.launchApp(ctl.installOptions.installDir.length
+                                            ? ctl.installOptions.installDir : ctl.installed.installDir)) {
+                            Qt.quit()
+                        }
+                    }
+                }
 
-            // ---- Uninstall complete ----
-            CompletePage {
-                visible: ctl.view === "uninstalled"
-                title: qsTr("Uninstall complete")
-                description: ctl.removeAllData
-                           ? qsTr("Program files have been removed; local application data was purged.")
-                           : qsTr("Program files have been removed; personal presets and preferences were retained.")
-                primaryText: qsTr("Finish")
-                secondaryText: qsTr("View files")
-                showSecondary: ctl.keepDataDir
-                onPrimaryAction: Qt.quit()
-                onSecondaryAction: Host.revealLogs()
+                // ---- Uninstall: data scope ----
+                DataScopePage {
+                    removeAllData: ctl.removeAllData
+                    onModeSelected: (removeAll) => ctl.removeAllData = removeAll
+                    onNextRequested: ctl.view = "confirm"
+                    onCancelRequested: window.requestClose()
+                }
+
+                // ---- Uninstall: confirmation ----
+                UninstallConfirmPage {
+                    removeAllData: ctl.removeAllData
+                    keepDataDir: ctl.keepDataDir
+                    installDir: ctl.installed.installDir
+                    onKeepDataDirToggled: (c) => ctl.keepDataDir = c
+                    onBackRequested: ctl.view = "dataScope"
+                    onConfirmRequested: ctl.beginUninstall()
+                }
+
+                // ---- Uninstall complete ----
+                CompletePage {
+                    title: qsTr("Uninstall complete")
+                    description: ctl.removeAllData
+                               ? qsTr("Program files have been removed; local application data was purged.")
+                               : qsTr("Program files have been removed; personal presets and preferences were retained.")
+                    primaryText: qsTr("Finish")
+                    secondaryText: qsTr("View files")
+                    showSecondary: ctl.keepDataDir
+                    onPrimaryAction: Qt.quit()
+                    onSecondaryAction: Host.revealLogs()
+                }
             }
-        }
+        ]
+    }
+
+    // Failure dialog: a modal popup over the current screen (design: 配置迁移失败 popup), not a separate
+    // page. Declared as a sibling of AppFrame so it keeps its own full-window geometry.
+    ErrorDialog {
+        anchors.fill: parent
+        open: ctl.view === "failure"
+        title: ctl.failureTitle
+        message: ctl.failureMessage
+        code: ctl.failureCodeText
+        steps: ctl.failureSteps
+        onRetryRequested: ctl.retry()
+        onCancelRequested: window.requestClose()
     }
 }

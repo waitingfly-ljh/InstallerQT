@@ -18,6 +18,10 @@ class SetupEngine : public QObject
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
     Q_PROPERTY(int progress READ progress NOTIFY progressChanged)
     Q_PROPERTY(QString phase READ phase NOTIFY phaseChanged)
+    // Numeric twin of `phase` (0 = preparing/verifying, 1 = writing program files, 2 = finishing
+    // configuration). QML needs a language-independent value to mark the step list of the failure
+    // dialog; comparing translated phase strings there would break as soon as the UI language changes.
+    Q_PROPERTY(int phaseIndex READ phaseIndex NOTIFY phaseChanged)
     Q_PROPERTY(QString detail READ detail NOTIFY detailChanged)
     Q_PROPERTY(QString logPath READ logPath NOTIFY logPathChanged)
 
@@ -28,6 +32,7 @@ public:
     bool busy() const { return m_busy; }
     int progress() const { return m_progress; }
     QString phase() const { return m_phase; }
+    int phaseIndex() const { return m_phaseIndex; }
     QString detail() const { return m_detail; }
     QString logPath() const { return m_logPath; }
 
@@ -95,6 +100,7 @@ private:
     QString m_installDir;
     QString m_logPath;
     QString m_phase;
+    int m_phaseIndex = 0;     // Numeric twin of m_phase, exposed to QML (see the Q_PROPERTY comment)
     QString m_detail;
     QString m_pendingLine;
     QString m_backupDir;      // Temporary backup of the old install directory during maintenance (empty = not an overwrite install)

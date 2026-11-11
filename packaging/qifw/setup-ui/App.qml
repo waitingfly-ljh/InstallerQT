@@ -90,52 +90,78 @@ Item {
 
     Component {
         id: smokeFrameComponent
-        AppFrame {
+        // Root is a plain Item (not AppFrame) so the failure dialog can overlay the whole window: every
+        // direct child of AppFrame lands in its content host, which would clip the 560px dialog to 440px.
+        Item {
             // The smoke component is an independent instance and no longer derives state itself: it accepts the screenshot controller.
             // The options page binds directly to the controller (consistent with Main.qml): --option changes exactly this state,
             // and copying a snapshot would instead yield defaults due to ctl's onCompleted timing.
             property var shotCtl
-            StackLayout {
-                anchors.fill: parent
-                // Content area matches Main.qml: shows only the page at the controller's currentIndex.
-                // StackLayout ignores each page's own visible, so showOnly() changes ctl.flowView instead.
-                currentIndex: shotCtl !== undefined ? shotCtl.viewIndex : 0
 
-                OptionsPage {
-                    id: optionsPage
-                    installParentDir: "C:\\Program Files"
-                    shortcutDesktop: true
-                    assoc3mf: true
-                    assocStl: false
-                    launchAfterInstall: true
-                    notice: ""
-                    onDirChanged: (d) => {}
-                    onOptionChanged: (k, v) => {}
+            AppFrame {
+                id: shotFrame
+                anchors.fill: parent
+
+                content: [
+                StackLayout {
+                    anchors.fill: parent
+                    // Content area matches Main.qml: shows only the page at the controller's currentIndex.
+                    // StackLayout ignores each page's own visible, so showOnly() changes ctl.flowView instead.
+                    currentIndex: shotCtl !== undefined ? shotCtl.viewIndex : 0
+
+                    WelcomePage { }
+                    LicensePage { accepted: shotCtl !== undefined && shotCtl.licenseAccepted; onAcceptToggled: (v) => {} }
+                    OptionsPage {
+                        id: optionsPage
+                        installParentDir: "C:\\Program Files"
+                        shortcutDesktop: true
+                        assoc3mf: true
+                        assocStl: false
+                        launchAfterInstall: true
+                        notice: ""
+                        onDirChanged: (d) => {}
+                        onOptionChanged: (k, v) => {}
+                    }
+                    MaintenancePage {
+                        id: maintenancePage
+                        mode: "upgrade"
+                        currentVersion: "1.0.0"
+                        targetVersion: "1.1.0"
+                        riskAcknowledged: false
+                        onRiskToggled: (c) => {}
+                    }
+                    // The progress level is hardcoded in the screenshot component: Host.engine is not running in screenshot mode, so reading it always yields 0%.
+                    ProgressPage { id: progressPage; heading: qsTr("Installing OrbbecSlicer"); lead: qsTr("Please keep this window open. The installation does not upload local projects or user presets."); phase: qsTr("Preparing components"); progress: 62; detail: qsTr("Verifying package integrity...") }
+                    CompletePage { id: completePage; title: qsTr("Complete"); description: qsTr("Ready"); primaryText: qsTr("Launch now"); secondaryText: qsTr("View files"); showSecondary: true }
+                    DataScopePage { id: dataScopePage; removeAllData: false }
+                    UninstallConfirmPage { id: confirmPage; removeAllData: false; keepDataDir: true; installDir: "C:\\OrbbecSlicer" }
+                    CompletePage {
+                        id: uninstalledPage
+                        title: qsTr("Uninstall complete")
+                        description: qsTr("Program files have been removed; personal presets and preferences were retained.")
+                        primaryText: qsTr("Finish")
+                        secondaryText: qsTr("View files")
+                        showSecondary: true
+                    }
                 }
-                MaintenancePage {
-                    id: maintenancePage
-                    mode: "upgrade"
-                    currentVersion: "1.0.0"
-                    targetVersion: "1.1.0"
-                    riskAcknowledged: false
-                    onRiskToggled: (c) => {}
-                }
-                // The progress level is hardcoded in the screenshot component: Host.engine is not running in screenshot mode, so reading it always yields 0%.
-                ProgressPage { id: progressPage; heading: qsTr("Installing OrbbecSlicer"); lead: qsTr("Please keep this window open. The installation does not upload local projects or user presets."); phase: qsTr("Preparing components"); progress: 62; detail: qsTr("Verifying package integrity...") }
-                CompletePage { id: completePage; title: qsTr("Complete"); description: qsTr("Ready"); primaryText: qsTr("Launch now"); secondaryText: qsTr("View files"); showSecondary: true }
-                FailurePage { id: failurePage; errorCode: "1205"; errorText: qsTr("Insufficient permission while writing files") }
-                DataScopePage { id: dataScopePage; removeAllData: false }
-                UninstallConfirmPage { id: confirmPage; removeAllData: false; keepDataDir: true; installDir: "C:\\OrbbecSlicer" }
-                CompletePage {
-                    id: uninstalledPage
-                    title: qsTr("Uninstall complete")
-                    description: qsTr("Program files have been removed; personal presets and preferences were retained.")
-                    primaryText: qsTr("Finish")
-                    secondaryText: qsTr("View files")
-                    showSecondary: true
-                }
+                ]
             }
-            // The smoke component is an independent instance and no longer derives state itself: both the controller and the step list come from the caller.
+
+            // Failure dialog: same overlay as Main.qml, so --view failure captures the popup over the progress page.
+            // The controller has no engine summary in screenshot mode, so a sample sentence stands in for
+            // the real hint strip text (layout review only; real launches always pass the engine summary).
+            ErrorDialog {
+                anchors.fill: parent
+                open: shotCtl !== undefined && shotCtl.view === "failure"
+                title: shotCtl !== undefined ? shotCtl.failureTitle : qsTr("Installation failed")
+                message: shotCtl !== undefined && shotCtl.failureMessage.length > 0
+                         ? shotCtl.failureMessage
+                         : qsTr("The installation stopped unexpectedly. Files written so far were rolled back; retry or check the environment and try again.")
+                code: shotCtl !== undefined ? shotCtl.failureCodeText : ""
+                steps: shotCtl !== undefined ? shotCtl.failureSteps : []
+            }
+
+            // The smoke component is an independent instance and no longer derives state itself: the controller comes from the caller.
             function showOnly(view) {
                 if (shotCtl !== undefined)
                     shotCtl.setView(view)
@@ -146,10 +172,6 @@ Item {
                 shotCtl = state.ctl
                 // During screenshots --option changes ctl.installOptions, which the page binds to. The page's own
                 // dirChanged / optionChanged only fire on user actions and do not trigger during screenshots, so they are not wired back to the controller.
-                // The step list is likewise bound to ctl (rather than copied as a snapshot): when setView() switches to the progress/complete page,
-                // the sidebar must follow and become done/active/pending.
-                installSteps = Qt.binding(() => shotCtl.installSteps)
-                uninstallSteps = Qt.binding(() => shotCtl.uninstallSteps)
                 optionsPage.installParentDir = Qt.binding(() => shotCtl.installOptions.installParentDir)
                 optionsPage.shortcutDesktop = Qt.binding(() => shotCtl.installOptions.shortcutDesktop)
                 optionsPage.assoc3mf = Qt.binding(() => shotCtl.installOptions.assoc3mf)

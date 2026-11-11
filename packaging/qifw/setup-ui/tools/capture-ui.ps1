@@ -16,7 +16,7 @@
   powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\capture-ui.ps1 -Models 'options|failure'
 #>
 param(
-    [string]$Models = 'options|maintenance|progress|complete|failure|uninstall-scope|uninstall-confirm|uninstall-done|option-shortcutDesktop|option-assoc3mf|option-assocStl|option-launchAfterInstall',
+    [string]$Models = 'welcome|license|options|maintenance|progress|complete|failure|uninstall-scope|uninstall-confirm|uninstall-done|option-shortcutDesktop|option-assoc3mf|option-assocStl|option-launchAfterInstall',
     # UI language for the captures (e.g. zh_CN). Empty keeps the default (English / system locale).
     # Captures are written as <view>-<shortlang>.png so they can be compared side by side with the English set.
     [string]$Lang = '',
@@ -35,8 +35,8 @@ $Exe = Join-Path $BuildDir 'OrbbecSlicerSetup.exe'
 
 if (-not (Test-Path -LiteralPath $QtBin)) { throw "Qt not found: $QtBin" }
 
-# View names = SetupController.view names; the three uninstall screens share names, and main.cpp additionally switches the sidebar in the smoke run.
-$Views = @('options', 'maintenance', 'progress', 'complete', 'failure',
+# View names = SetupController.view names; the three uninstall screens use their own names (main.cpp shotModelFor maps them to dataScope/confirm/uninstalled).
+$Views = @('welcome', 'license', 'options', 'maintenance', 'progress', 'complete', 'failure',
            'uninstall-scope', 'uninstall-confirm', 'uninstall-done')
 $OptionKeys = @('shortcutDesktop', 'assoc3mf', 'assocStl', 'launchAfterInstall')
 
@@ -134,7 +134,7 @@ if (-not (Test-Path -LiteralPath $Exe)) { throw "Screenshot exe not found: $Exe"
 # --- 2. Capture screenshots view by view ---------------------------------------------------------
 # Screenshots need real rendering (the offscreen platform produces no image), so use the Qt Quick software rendering backend to avoid depending on the GPU.
 # Fix DPI to 96 and scale factor to 1: the machine is at 125% scaling, so Windows rasterizes the window at 1.25x and
-# the screenshot becomes 1175x813; the review artwork is designed at 100% (940x650), so both must be fixed for a pixel-by-pixel comparison.
+# the screenshot becomes 1200x675; the 11-11 design is 1x 960x540, so both must be fixed for a pixel-by-pixel comparison.
 New-Item -ItemType Directory -Force -Path $ShotDir | Out-Null
 $env:QT_QUICK_BACKEND = 'software'
 $env:QT_ENABLE_HIGHDPI_SCALING = '0'

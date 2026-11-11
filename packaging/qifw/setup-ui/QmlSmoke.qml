@@ -43,24 +43,18 @@ ApplicationWindow {
     readonly property string dirOverride: (typeof smokeDir !== "undefined" && smokeDir !== null
                                            && String(smokeDir).length > 0) ? String(smokeDir) : ""
 
-    // The step list is a var array; each item is copied into a plain JS object before handing it to the shell component: passing QML objects directly
-    // makes label become undefined after cross-component assignment (step names appear blank in screenshots).
-    function stepsOf(list) {
-        const out = []
-        for (let i = 0; i < list.length; ++i)
-            out.push({ "label": String(list[i].label), "state": String(list[i].state) })
-        return out
-    }
-
     // Token table and base widgets
     UiTheme { id: theme }
     UiBtn { text: qsTr("OK"); primary: true }
     UiBtn { text: qsTr("Delete"); danger: true }
     UiBtn { text: qsTr("Disabled"); enabledState: false }
+    UiCheck { text: qsTr("Checked"); checked: true }
+    UiCheck { text: qsTr("Unchecked"); checked: false }
     BrandMark { base: theme.brand; accent: theme.brandSoft }
-    StepList {
-        steps: [{ "label": qsTr("One"), "state": "done" }, { "label": qsTr("Two"), "state": "active" },
+    ErrorDialog {
+        steps: [{ "label": qsTr("One"), "state": "done" }, { "label": qsTr("Two"), "state": "failed" },
                 { "label": qsTr("Three"), "state": "pending" }]
+        message: qsTr("Component check")
     }
 
     // Same as App.qml: the controller uses a property rather than an id; Main's required property wants an object property.
@@ -90,16 +84,12 @@ ApplicationWindow {
 
     // Shell and all pages: constructed once more independently of Main to check each page's bindings; not shown.
     // (Only the copy in the screenshot window is shown.)
-    // The step list is copied (stepsOf), consistent with the screenshot path: passing QML objects directly makes step names blank.
     Loader {
         sourceComponent: smoke.appFrameComponent
         onLoaded: {
             item.visible = false
-            item.installSteps = smoke.stepsOf(ctl.installSteps)
-            item.uninstallSteps = smoke.stepsOf(ctl.uninstallSteps)
         }
-        // Note: this Loader and the screenshot Loader below are not the same object (each has its own onLoaded),
-        // and the step list in the screenshot window is positioned by App.qml's applyShotState according to --view.
+        // Note: this Loader and the screenshot Loader below are not the same object (each has its own onLoaded).
     }
 
     // Screenshot: reached only after App.qml hands the path to this object.
@@ -130,7 +120,6 @@ ApplicationWindow {
                 // so what is read then is the default. Pages bind directly to ctl.installOptions, no copy needed;
                 // the step list is also bound to ctl by applyShotState, following --view.
                 item.applyShotState({ "ctl": ctl })
-                item.style = smoke.currentUninstalling ? "uninstall" : "install"
                 item.showOnly(smoke.currentView)
                 // The screenshot must show the actual on-screen pixels of the "940×650 window": the window is scaled up by dpr in physical pixels,
                 // the content keeps its 940×650 visual size, and after scaling it rasterizes at device pixels, consistent with real scaling.

@@ -2,9 +2,17 @@
 import QtQuick
 import SetupUi
 
-// Generic button (corresponds to design mockup .button / .button.primary / .button.danger).
-// Kept as a separate file instead of an inline component in Ui.qml: this project loads modules via absolute qrc paths, and
-// type references and Theme instances inside inline components resolve to undefined under Qt 6.8 (see UiTheme.qml).
+// Generic button for the 11-11 design: 124x44, radius 8, 14px Medium label.
+//   primary  filled brand teal, white label (下一步 / 安装 / 开始升级 / 重试)
+//   default  #fbfbfb fill with a 1px #ececec border, dark label (取消 / 上一步)
+//   danger   filled red (not used by the 11-11 screens, kept for the smoke component check)
+// Disabled: solid #cccccc fill with a light #eeeeee label (design: "确认并降级" / the license
+// "下一步" before the agreement is accepted), not a dimmed copy of the enabled style.
+// chevron: "left" / "right" draws the design's ‹ / › next to the label ("上一步" / "下一步").
+//
+// Kept as a separate file instead of an inline component: this project loads modules through
+// absolute qrc paths, and inline components cannot resolve the token table reliably under Qt 6.8
+// (see the notes at the top of UiTheme.qml).
 Rectangle {
     id: b
     UiTheme { id: theme }   // Plain property object placed after the id (under Qt 6.8 the id must immediately follow the root object)
@@ -13,34 +21,69 @@ Rectangle {
     property bool primary: false
     property bool danger: false
     property bool enabledState: true
-    // The disabled state keeps the button's own color and dims the whole button to 45% opacity (design mockup .button:disabled { opacity: .45 }),
-    // otherwise the primary button would degrade into gray background with dark text, heavier than the design mockup.
-    opacity: enabledState ? 1 : 0.45
-    Behavior on opacity { NumberAnimation { duration: theme.animFast } }
+    property string chevron: ""
+    // Dialog buttons hug their label (padding 32 per side, measured: the 取消 button in the failure
+    // dialog is 92px wide while the same label is 124px wide on the wizard pages).
+    property bool hug: false
     signal clicked()
 
-    // Design mockup .button { min-width: 88px; padding: 0 16px }; height 36px (adjust individually when aligning directory boxes, etc.).
-    // Hover: .button:hover { border-color: brand light color; color: var(--brand-dark) };
-    // the primary button switches to brand-dark on hover; the primary button also gets a matching-color border on hover, size unchanged.
-    implicitWidth: Math.max(88, label.implicitWidth + 32)
-    implicitHeight: 36
-    radius: theme.radius
-    border.width: 1
-    border.color: ma.containsMouse ? theme.brandHoverLine : theme.line
-    color: b.danger ? theme.danger
+    implicitWidth: hug ? content.implicitWidth + 64 : Math.max(theme.btnW, content.implicitWidth + 32)
+    implicitHeight: theme.btnH
+    radius: theme.radiusBtn
+    border.width: (!b.enabledState || b.primary || b.danger) ? 0 : 1
+    border.color: theme.btnSecondaryLine
+    color: !b.enabledState ? theme.btnDisabled
+         : b.danger ? (ma.containsMouse ? theme.dangerInk : theme.danger)
          : b.primary ? (ma.pressed || ma.containsMouse ? theme.brandDark : theme.brand)
-         : (ma.pressed ? theme.line : ma.containsMouse ? theme.lineSoft : theme.panel)
+         : (ma.pressed ? theme.line : ma.containsMouse ? theme.lineSoft : theme.btnSecondary)
     Behavior on color { ColorAnimation { duration: theme.animFast } }
 
-    Text {
-        id: label
+    readonly property color ink: !b.enabledState ? theme.btnDisabledInk
+                                  : (b.primary || b.danger) ? theme.white
+                                  : theme.text
+
+    Row {
+        id: content
         anchors.centerIn: parent
-        text: b.text
-        font.family: theme.fontFamily
-        font.pixelSize: theme.fontButton
-        font.bold: b.primary || b.danger
-        color: (b.primary || b.danger) ? theme.white : ma.containsMouse ? theme.brandDark : theme.text
+        height: b.height
+        spacing: 6
+
+        // Glyphs are drawn as text so no icon font or image resource is needed; the design uses the
+        // same thin ‹ / › chevrons (not a filled triangle).
+        // Children of a Row cannot use vertical anchors, so each text is stretched to the button
+        // height and centres its glyph itself.
+        Text {
+            visible: b.chevron === "left"
+            width: visible ? implicitWidth : 0
+            height: content.height
+            verticalAlignment: Text.AlignVCenter
+            text: "‹"
+            font.family: theme.fontFamily
+            font.pixelSize: theme.fontButton + 6
+            color: b.ink
+        }
+        Text {
+            id: label
+            height: content.height
+            verticalAlignment: Text.AlignVCenter
+            text: b.text
+            font.family: theme.fontFamily
+            font.pixelSize: theme.fontButton
+            font.weight: Font.Medium
+            color: b.ink
+        }
+        Text {
+            visible: b.chevron === "right"
+            width: visible ? implicitWidth : 0
+            height: content.height
+            verticalAlignment: Text.AlignVCenter
+            text: "›"
+            font.family: theme.fontFamily
+            font.pixelSize: theme.fontButton + 6
+            color: b.ink
+        }
     }
+
     MouseArea {
         id: ma
         anchors.fill: parent
