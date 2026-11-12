@@ -49,6 +49,8 @@ Item {
             }
             if (shotModel.view !== undefined)
                 view = shotModel.view
+            if (shotModel.rollback !== undefined)
+                rollbackOpen = shotModel.rollback
         }
     }
 
@@ -143,6 +145,17 @@ Item {
                         secondaryText: qsTr("View files")
                         showSecondary: true
                     }
+                    SnapshotPage {
+                        id: snapshotPage
+                        mode: "upgrade"
+                        currentVersion: "1.0.0"
+                        targetVersion: "1.1.0"
+                        installDir: "C:\\Program Files\\OrbbecSlicer"
+                        snapshotEnabled: true
+                        snapshotName: "snapshot20261111-213045"
+                        onNameChanged: (n) => {}
+                        onEnabledToggled: (on) => {}
+                    }
                 }
                 ]
             }
@@ -159,6 +172,21 @@ Item {
                          : qsTr("The installation stopped unexpectedly. Files written so far were rolled back; retry or check the environment and try again.")
                 code: shotCtl !== undefined ? shotCtl.failureCodeText : ""
                 steps: shotCtl !== undefined ? shotCtl.failureSteps : []
+            }
+
+            // Rollback dialog: same overlay as Main.qml (--view rollback). The engine has no snapshots in
+            // screenshot mode, so sample rows stand in for the list (layout review only; real launches read
+            // Host.engine.snapshots through the controller).
+            RollbackDialog {
+                anchors.fill: parent
+                open: shotCtl !== undefined && shotCtl.rollbackOpen
+                snapshots: shotCtl !== undefined && shotCtl.snapshots.length > 0 ? shotCtl.snapshots : [
+                    { "name": "snapshot20261111-213045", "version": "1.0.0", "createdAt": "2026-11-11T21:30:45", "bytes": 372000000 },
+                    { "name": "snapshot20261109-101323", "version": "0.9.6", "createdAt": "2026-11-09T10:13:23", "bytes": 358000000 }
+                ]
+                selectedName: shotCtl !== undefined && shotCtl.rollbackName.length > 0
+                              ? shotCtl.rollbackName : "snapshot20261111-213045"
+                errorText: shotCtl !== undefined ? shotCtl.rollbackError : ""
             }
 
             // The smoke component is an independent instance and no longer derives state itself: the controller comes from the caller.

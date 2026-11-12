@@ -8,7 +8,11 @@
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QProcessEnvironment>
+#include <QRegularExpression>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -24,6 +28,7 @@
 
 #include <algorithm>
 #include <climits>
+#include <functional>
 #include "msopen.h"
 
 namespace {
@@ -142,6 +147,8 @@ SetupEngine::SetupEngine(Environment *env, QObject *parent) : QObject(parent), m
             setProgress(m_progress + (m_progress < 60 ? 2 : 1));
     });
     m_logPath = makeLogPath();
+    // Snapshots are listed by the maintenance page (restore entry) and by the snapshot page (name clash); read them once at startup.
+    refreshSnapshots();
 }
 
 SetupEngine::~SetupEngine()
@@ -205,7 +212,8 @@ void SetupEngine::startProcess(const QString &program, const QStringList &args, 
     m_busy = true;
     m_cancelRequested = false;
     m_pendingLine.clear();
-    setProgress(0);
+    // A maintenance run that just wrote a snapshot keeps its progress instead of dropping back to 0.
+    setProgress(m_startProgress);
     m_phase = phase;
     m_phaseIndex = 0;
     emit phaseChanged();
@@ -238,6 +246,243 @@ void SetupEngine::startProcess(const QString &program, const QStringList &args, 
     });
     m_proc->start(program, args);
     m_ticker->start();
+}
+
+QString SetupEngine::snapshotRoot() const
+{
+    return m_env ? m_env->snapshotDirectory()
+                 : QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
+                       .filePath(QStringLiteral("snapshots"));
+}
+
+bool SetupEngine::isValidSnapshotName(const QString &name) const
+{
+    // Kept in sync with the hint under the name field on the snapshot page.
+    static const QRegularExpression re(QStringLiteral("^[A-Za-z][A-Za-z0-9._-]{0,64}$"));
+    return re.match(name).hasMatch();
+}
+
+void SetupEngine::setLastSnapshot(const QString &name)
+{
+    if (m_lastSnapshot == name)
+        return;
+    m_lastSnapshot = name;
+    emit lastSnapshotChanged();
+}
+
+void SetupEngine::refreshSnapshots()
+{
+    const QString root = snapshotRoot();
+    QVariantList list;
+    const QDir dir(root);
+    if (dir.exists()) {
+        const QFileInfoList entries = dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+        for (const QFileInfo &entry : entries) {
+            QFile manifest(entry.filePath() + QStringLiteral("/manifest.json"));
+            if (!manifest.open(QIODevice::ReadOnly))
+                continue;
+            const QJsonObject o = QJsonDocument::fromJson(manifest.readAll()).object();
+            manifest.close();
+            QVariantMap item;
+            item.insert(QStringLiteral("name"), entry.fileName());
+            item.insert(QStringLiteral("version"), o.value(QStringLiteral("version")).toString());
+            item.insert(QStringLiteral("createdAt"), o.value(QStringLiteral("createdAt")).toString());
+            item.insert(QStringLiteral("bytes"), static_cast<qint64>(o.value(QStringLiteral("bytes")).toDouble()));
+            item.insert(QStringLiteral("path"), QDir::toNativeSeparators(entry.filePath()));
+            list.append(item);
+        }
+    }
+    // Newest first (the manifest timestamp is ISO 8601, so a string sort is enough).
+    std::sort(list.begin(), list.end(), [](const QVariant &a, const QVariant &b) {
+        return a.toMap().value(QStringLiteral("createdAt")).toString()
+               > b.toMap().value(QStringLiteral("createdAt")).toString();
+    });
+    m_snapshots = list;
+    emit snapshotsChanged();
+}
+
+namespace {
+// Recursive copy used by the snapshot and the rollback: plain file copy (symlinks are skipped by
+// the caller's enumeration), `totalFiles` is the predicted count from the same enumeration so the
+// caller can turn `files` into a percentage. `cancelled` is polled per file so a slow backup can
+// still be stopped from the progress page.
+bool copyDirTree(const QString &from, const QString &to, int &files, int &totalFiles,
+                 const std::function<void(int, int)> &tick,
+                 const std::function<bool()> &cancelled = nullptr)
+{
+    QDir src(from);
+    if (!src.exists())
+        return true;
+    if (!QDir().mkpath(to))
+        return false;
+    const QFileInfoList entries = src.entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden);
+    for (const QFileInfo &entry : entries) {
+        if (cancelled && cancelled())
+            return false;
+        const QString target = QDir(to).filePath(entry.fileName());
+        if (entry.isDir()) {
+            if (!copyDirTree(entry.absoluteFilePath(), target, files, totalFiles, tick, cancelled))
+                return false;
+        } else {
+            if (QFileInfo::exists(target) && !QFile::remove(target))
+                return false;
+            if (!QFile::copy(entry.absoluteFilePath(), target))
+                return false;
+            ++files;
+            if (tick)
+                tick(files, totalFiles);
+        }
+    }
+    return true;
+}
+} // namespace
+
+SetupEngine::SnapshotResult SetupEngine::createSnapshot(const QString &name, QString &error)
+{
+    if (!isValidSnapshotName(name)) {
+        error = tr("The snapshot name must start with a letter and may only contain letters, numbers, - _ . (1-65 characters).");
+        return SnapshotResult::Failed;
+    }
+    const QString root = snapshotRoot();
+    const QString target = QDir(root).filePath(name);
+    if (QFileInfo::exists(target)) {
+        error = tr("A snapshot named %1 already exists.").arg(name);
+        return SnapshotResult::Failed;
+    }
+    if (!QDir().mkpath(target)) {
+        error = tr("Cannot create the snapshot directory %1.").arg(QDir::toNativeSeparators(target));
+        return SnapshotResult::Failed;
+    }
+
+    // What goes into the snapshot: the installed program directory (so the old version can be
+    // brought back) and both user data scopes (presets, preferences, printer info, LAN access code).
+    struct Source { QString label; QString from; QString to; };
+    QList<Source> sources;
+    if (QFileInfo(m_installDir).isDir())
+        sources.append({ QStringLiteral("Program"), m_installDir, QDir(target).filePath(QStringLiteral("Program")) });
+    if (m_env) {
+        const QString roaming = m_env->userDataDirectory(true);
+        const QString local = m_env->userDataDirectory(false);
+        if (QFileInfo(roaming).isDir())
+            sources.append({ QStringLiteral("Roaming"), roaming, QDir(target).filePath(QStringLiteral("Roaming")) });
+        if (QFileInfo(local).isDir())
+            sources.append({ QStringLiteral("Local"), local, QDir(target).filePath(QStringLiteral("Local")) });
+    }
+
+    int totalFiles = 0;
+    for (const Source &s : sources) {
+        QDirIterator it(s.from, QDir::Files | QDir::NoSymLinks, QDirIterator::Subdirectories);
+        while (it.hasNext()) { it.next(); ++totalFiles; }
+    }
+    appendLog(QStringLiteral("Snapshot: %1 files from %2 location(s) → %3")
+                  .arg(totalFiles).arg(sources.size()).arg(QDir::toNativeSeparators(target)));
+
+    int files = 0;
+    qint64 bytes = 0;
+    for (const Source &s : sources) {
+        const bool copied = copyDirTree(
+            s.from, s.to, files, totalFiles,
+            [this](int done, int total) {
+                // Keep the bar inside the snapshot's own slice (1..8%); the install itself continues from there.
+                if (total > 0)
+                    setProgress(1 + static_cast<int>(7.0 * done / total));
+                if (done % 64 == 0) {
+                    m_detail = tr("Backing up %1 of %2 files").arg(done).arg(total);
+                    emit detailChanged();
+                    QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+                }
+            },
+            [this] { return m_cancelRequested; });
+        if (!copied) {
+            // Cancel and failure share the same return value; the caller distinguishes them through
+            // m_cancelRequested, and both cases must not leave a half-written snapshot behind.
+            QDir(target).removeRecursively();
+            if (m_cancelRequested)
+                return SnapshotResult::Cancelled;
+            error = tr("Failed to copy %1 to the snapshot.").arg(s.from.length() > 0
+                                                                    ? QDir::toNativeSeparators(s.from) : s.label);
+            appendLog(QStringLiteral("Snapshot: copy failed for %1 (%2 → %3)")
+                          .arg(s.label, QDir::toNativeSeparators(s.from), QDir::toNativeSeparators(s.to)));
+            return SnapshotResult::Failed;
+        }
+        if (m_env)
+            bytes += m_env->directoryBytes(s.to);
+    }
+
+    QJsonObject manifest;
+    manifest.insert(QStringLiteral("name"), name);
+    manifest.insert(QStringLiteral("version"), m_env ? m_env->installedInfo().value(QStringLiteral("version")).toString()
+                                                    : QString());
+    manifest.insert(QStringLiteral("installDir"), QDir::toNativeSeparators(m_installDir));
+    manifest.insert(QStringLiteral("createdAt"),
+                    QDateTime::currentDateTime().toString(Qt::ISODate));
+    manifest.insert(QStringLiteral("bytes"), static_cast<double>(bytes));
+    QFile mf(QDir(target).filePath(QStringLiteral("manifest.json")));
+    if (!mf.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        error = tr("Cannot write the snapshot manifest.");
+        QDir(target).removeRecursively();
+        return SnapshotResult::Failed;
+    }
+    mf.write(QJsonDocument(manifest).toJson(QJsonDocument::Indented));
+    mf.close();
+
+    appendLog(QStringLiteral("Snapshot complete: %1 (%2 bytes)").arg(name).arg(bytes));
+    refreshSnapshots();
+    return SnapshotResult::Ok;
+}
+
+bool SetupEngine::restoreSnapshot(const QString &name)
+{
+    if (!isValidSnapshotName(name))
+        return false;
+    const QString dir = QDir(snapshotRoot()).filePath(name);
+    if (!QFileInfo(dir).isDir()) {
+        appendLog(QStringLiteral("Rollback: snapshot not found %1").arg(QDir::toNativeSeparators(dir)));
+        return false;
+    }
+    if (!m_env) {
+        appendLog(QStringLiteral("Rollback: no environment, cannot resolve the user data directories"));
+        return false;
+    }
+    // Restore the user data scopes only: the program directory is restored by the installer itself
+    // (QIFW puts the previous version back when a maintenance run fails).
+    const QList<QPair<QString, QString>> scopes = {
+        { QStringLiteral("Roaming"), m_env->userDataDirectory(true) },
+        { QStringLiteral("Local"), m_env->userDataDirectory(false) },
+    };
+    for (const auto &scope : scopes) {
+        const QString from = QDir(dir).filePath(scope.first);
+        if (!QFileInfo(from).isDir())
+            continue;
+        // The live user data is moved aside instead of deleted up front: a failed copy must not lose
+        // the user's current presets/preferences (the snapshot may be older than what is on disk).
+        const QString aside = scope.second + QStringLiteral(".rollback-old");
+        QDir(aside).removeRecursively();
+        bool movedAside = false;
+        if (QFileInfo(scope.second).exists()) {
+            if (!QDir().rename(scope.second, aside)) {
+                appendLog(QStringLiteral("Rollback: cannot move %1 aside")
+                              .arg(QDir::toNativeSeparators(scope.second)));
+                return false;
+            }
+            movedAside = true;
+        }
+        int files = 0, total = 0;
+        if (!copyDirTree(from, scope.second, files, total, nullptr)) {
+            appendLog(QStringLiteral("Rollback: failed to restore %1 from %2")
+                          .arg(QDir::toNativeSeparators(scope.second), QDir::toNativeSeparators(from)));
+            QDir(scope.second).removeRecursively();
+            if (movedAside && !QDir().rename(aside, scope.second))
+                appendLog(QStringLiteral("Rollback: could not put %1 back; the previous data is in %2")
+                              .arg(QDir::toNativeSeparators(scope.second), QDir::toNativeSeparators(aside)));
+            return false;
+        }
+        if (movedAside)
+            QDir(aside).removeRecursively();
+        appendLog(QStringLiteral("Rollback: restored %1 file(s) to %2")
+                      .arg(files).arg(QDir::toNativeSeparators(scope.second)));
+    }
+    return true;
 }
 
 bool SetupEngine::beginReplaceExisting()
@@ -317,12 +562,6 @@ void SetupEngine::startInstall(const QString &targetDir, const QVariantMap &opti
                      .filePath(QStringLiteral("installer-cache"));
     QDir().mkpath(m_cacheDir);
 
-    if (!beginReplaceExisting()) {
-        appendLog(QStringLiteral("Cannot prepare maintenance install directory: %1").arg(m_installDir));
-        emit finished(4, tr("Cannot prepare maintenance install directory: %1").arg(m_installDir));
-        return;
-    }
-    QStringList args = qifwInstallArgs(m_installDir, m_cacheDir);
     // Note: QIFW 4.11's installerbase has no overwrite switch (-x is treated as Unknown option);
     // overwrite/repair is done by the maintenance entry and -t pointing to the same directory, so no extra arguments are appended here.
     m_shortcutDesktop = options.value(QStringLiteral("shortcutDesktop")).toBool();
@@ -332,7 +571,64 @@ void SetupEngine::startInstall(const QString &targetDir, const QVariantMap &opti
     appendLog(QStringLiteral("Install options: shortcut=%1 .3mf=%2 .stl=%3 launch after install=%4")
                   .arg(m_shortcutDesktop).arg(m_assoc3mf).arg(m_assocStl)
                   .arg(m_launchAfterInstall));
-    startProcess(m_payloadPath, args, tr("Verifying installer payload"));
+
+    // Pre-install snapshot (maintenance screens): take it before the old program directory is renamed away,
+    // and show its own phase first so the bar is not stuck at "preparing" while files are copied.
+    m_snapshotRequested = options.value(QStringLiteral("snapshot")).toBool();
+    m_snapshotName = options.value(QStringLiteral("snapshotName")).toString().trimmed();
+    m_startProgress = 0;
+    setLastSnapshot(QString());
+    if (m_snapshotRequested) {
+        appendLog(QStringLiteral("Snapshot requested: %1").arg(m_snapshotName));
+        m_busy = true;
+        m_cancelRequested = false;
+        setProgress(0);
+        m_phase = tr("Creating the pre-install snapshot");
+        m_phaseIndex = 0;
+        emit phaseChanged();
+        m_detail = tr("Backing up the current program and configuration");
+        emit detailChanged();
+        emit busyChanged();
+        // Return to the event loop once so the phase above is painted before the copy blocks the UI thread.
+        QTimer::singleShot(0, this, [this] { prepareSnapshot(); });
+        return;
+    }
+    continueInstall();
+}
+
+void SetupEngine::prepareSnapshot()
+{
+    QString error;
+    const SnapshotResult result = createSnapshot(m_snapshotName, error);
+    // Leave the busy state to startProcess: it refuses to run while busy.
+    m_busy = false;
+    emit busyChanged();
+    if (result == SnapshotResult::Cancelled) {
+        // The partial copy is already removed by createSnapshot; report a plain cancel so the UI goes
+        // back to where it came from instead of showing a failure.
+        appendLog(QStringLiteral("Snapshot cancelled by the user"));
+        m_cancelRequested = false;
+        emit cancelled();
+        return;
+    }
+    if (result == SnapshotResult::Failed) {
+        appendLog(QStringLiteral("Snapshot failed: %1").arg(error));
+        emit finished(6, tr("Cannot create the pre-install snapshot: %1").arg(error));
+        return;
+    }
+    m_startProgress = 8;
+    setLastSnapshot(m_snapshotName);
+    continueInstall();
+}
+
+void SetupEngine::continueInstall()
+{
+    if (!beginReplaceExisting()) {
+        appendLog(QStringLiteral("Cannot prepare maintenance install directory: %1").arg(m_installDir));
+        emit finished(4, tr("Cannot prepare maintenance install directory: %1").arg(m_installDir));
+        return;
+    }
+    startProcess(m_payloadPath, qifwInstallArgs(m_installDir, m_cacheDir), tr("Verifying installer payload"));
 }
 
 void SetupEngine::startUninstall(const QString &installDir, bool removeAllData, bool keepDataDir)
@@ -341,6 +637,9 @@ void SetupEngine::startUninstall(const QString &installDir, bool removeAllData, 
     m_removeAllData = removeAllData;
     m_keepDataDir = keepDataDir;
     m_installDir = QDir::toNativeSeparators(installDir);
+    // A maintenance run may have left the start progress at the snapshot slice (8%); uninstall
+    // always starts from zero in this window.
+    m_startProgress = 0;
     m_cacheDir = QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation))
                      .filePath(QStringLiteral("installer-cache"));
     QDir().mkpath(m_cacheDir);
@@ -375,8 +674,17 @@ void SetupEngine::startUninstall(const QString &installDir, bool removeAllData, 
 
 void SetupEngine::cancel()
 {
-    if (!m_busy || !m_proc)
+    if (!m_busy)
         return;
+    if (!m_proc) {
+        // Snapshot phase: there is no child process yet, so the copy loop polls m_cancelRequested
+        // and prepareSnapshot() reports the cancel once the loop stops.
+        m_cancelRequested = true;
+        m_detail = tr("Cancelling…");
+        emit detailChanged();
+        appendLog(QStringLiteral("User requested cancel (snapshot)"));
+        return;
+    }
     m_cancelRequested = true;
     m_detail = tr("Cancelling…");
     emit detailChanged();

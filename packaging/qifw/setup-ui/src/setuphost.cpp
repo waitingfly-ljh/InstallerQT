@@ -245,6 +245,16 @@ QString SetupHost::normalizeDirPath(const QString &path)
     return m_env ? m_env->normalizeDirPath(path) : path.trimmed();
 }
 
+QString SetupHost::userDataDirectory(bool roaming)
+{
+    return m_env ? m_env->userDataDirectory(roaming) : QString();
+}
+
+qint64 SetupHost::directoryBytes(const QString &path)
+{
+    return m_env ? m_env->directoryBytes(path) : 0;
+}
+
 void SetupHost::refreshInstalled()
 {
     emit installedChanged();

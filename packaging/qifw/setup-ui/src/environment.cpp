@@ -12,6 +12,7 @@
 #include <QHash>
 #include <QMutex>
 #include <QMutexLocker>
+#include <QDirIterator>
 
 #include "msopen.h"
 
@@ -254,4 +255,39 @@ QString Environment::logDirectory() const
                          + QStringLiteral("/logs");
     QDir().mkpath(logs);
     return QDir::toNativeSeparators(logs);
+}
+
+QString Environment::userDataDirectory(bool roaming) const
+{
+    // The product data root follows the app's own org/app name (Orbbec/OrbbecSlicer); the installer's
+    // AppLocalDataLocation is .../Orbbec/OrbbecSlicerSetup and only holds installer logs.
+    const QString dataRoot = qEnvironmentVariable("ORBBEC_SETUP_DATA_ROOT");
+    const QString dir = dataRoot.isEmpty()
+        ? QDir(qEnvironmentVariable(roaming ? "APPDATA" : "LOCALAPPDATA"))
+              .filePath(QStringLiteral("Orbbec/OrbbecSlicer"))
+        : QDir(dataRoot).filePath(roaming ? QStringLiteral("Roaming/Orbbec/OrbbecSlicer")
+                                          : QStringLiteral("Local/Orbbec/OrbbecSlicer"));
+    return QDir::toNativeSeparators(dir);
+}
+
+QString Environment::snapshotDirectory() const
+{
+    const QString dataRoot = qEnvironmentVariable("ORBBEC_SETUP_DATA_ROOT");
+    const QString base = dataRoot.isEmpty()
+        ? QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
+        : QDir(dataRoot).filePath(QStringLiteral("Local/Orbbec/OrbbecSlicerSetup"));
+    return QDir::toNativeSeparators(QDir(base).filePath(QStringLiteral("snapshots")));
+}
+
+qint64 Environment::directoryBytes(const QString &path) const
+{
+    if (path.isEmpty() || !QFileInfo(path).isDir())
+        return 0;
+    qint64 total = 0;
+    QDirIterator it(path, QDir::Files | QDir::NoSymLinks, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        it.next();
+        total += it.fileInfo().size();
+    }
+    return total;
 }

@@ -20,6 +20,7 @@ Item {
     property bool riskAcknowledged: false
     signal proceedRequested(mode: string)
     signal cancelRequested()
+    signal restoreRequested()
     signal riskToggled(bool checked)
 
     readonly property string title: mode === "repair" ? qsTr("Repair OrbbecSlicer")
@@ -264,6 +265,40 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             spacing: theme.btnGap
+            // Recovery entry: only shown when the engine found snapshots on disk, so the design's clean
+            // bottom row is kept for first-time maintenance. Opens the 回滚数据 dialog.
+            Item {
+                visible: Host.engine.snapshots.length > 0
+                implicitWidth: restoreRow.implicitWidth
+                implicitHeight: theme.btnH
+                Row {
+                    id: restoreRow
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 6
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Restore a snapshot")
+                        font.family: theme.fontFamily
+                        font.pixelSize: theme.fontBody
+                        font.underline: restoreMa.containsMouse
+                        color: theme.brand
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "(" + Host.engine.snapshots.length + ")"
+                        font.family: theme.fontFamily
+                        font.pixelSize: theme.fontBody
+                        color: theme.muted
+                    }
+                }
+                MouseArea {
+                    id: restoreMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: page.restoreRequested()
+                }
+            }
             Item { Layout.fillWidth: true }
             UiBtn { text: qsTr("Cancel"); onClicked: page.cancelRequested() }
             UiBtn {

@@ -232,6 +232,10 @@ QVariantMap shotModelFor(const QString &name)
     } else if (name == QLatin1String("uninstall-done")) {
         m.insert(QStringLiteral("uninstalling"), true);
         m.insert(QStringLiteral("view"), QStringLiteral("uninstalled"));
+    } else if (name == QLatin1String("rollback")) {
+        // The rollback dialog is an overlay on the maintenance screen, not its own page.
+        m.insert(QStringLiteral("view"), QStringLiteral("maintenance"));
+        m.insert(QStringLiteral("rollback"), true);
     } else if (!name.isEmpty()) {
         m.insert(QStringLiteral("view"), name);
     }

@@ -57,6 +57,7 @@ QtObject {
     readonly property color textBody: "#6b6b6c"
     readonly property color muted: "#757575"
     readonly property color mutedSoft: "#bdbdbd"                // dialog pending rows / window buttons
+    readonly property color scrollThumb: "#bababa"              // license card scroll handle (measured on the 许可协议 frame)
     readonly property color inkDisabled: "#cccccc"              // disabled button label
     readonly property color checkLine: "#6b6b6c"                // unchecked checkbox border on the options page
     readonly property color checkLineStrong: "#009688"          // emphasised checkbox (license acceptance)

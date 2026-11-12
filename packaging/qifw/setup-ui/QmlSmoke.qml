@@ -56,12 +56,26 @@ ApplicationWindow {
                 { "label": qsTr("Three"), "state": "pending" }]
         message: qsTr("Component check")
     }
+    RollbackDialog {
+        snapshots: [{ "name": "snapshot-check", "version": "1.0.0", "createdAt": "2026-11-11T21:30:45", "bytes": 1024 }]
+        selectedName: "snapshot-check"
+        errorText: qsTr("Component check")
+    }
+    SnapshotPage {
+        mode: "upgrade"
+        currentVersion: "1.0.0"
+        targetVersion: "1.1.0"
+        snapshotName: "snapshot-check"
+    }
 
     // Same as App.qml: the controller uses a property rather than an id; Main's required property wants an object property.
     property SetupController ctl: SetupController {
         uninstalling: smoke.currentUninstalling
         Component.onCompleted: {
             view = smoke.currentView
+            // --view rollback: the dialog is an overlay on the maintenance page (see main.cpp shotModelFor).
+            if (typeof smokeView !== "undefined" && smokeView !== null && smokeView.rollback !== undefined)
+                rollbackOpen = smokeView.rollback
             if (smoke.dirOverride.length > 0) {
                 installOptions.installParentDir = smoke.dirOverride
                 installOptions.installDir = Host.installDirForParent(smoke.dirOverride)

@@ -64,6 +64,19 @@ public:
 
     Q_INVOKABLE QString logDirectory() const;
 
+    // Product user data directory (the slicer's own Orbbec/OrbbecSlicer folder, not the installer's).
+    // roaming=true -> %APPDATA% (presets, preferences, printer info, LAN access code),
+    // roaming=false -> %LOCALAPPDATA% (cache and logs).
+    // ORBBEC_SETUP_DATA_ROOT redirects both roots under a test directory (same hook as the uninstall cleanup).
+    Q_INVOKABLE QString userDataDirectory(bool roaming) const;
+
+    // Root of the pre-install snapshots: <installer local app data>/snapshots.
+    // Kept outside the install directory so a snapshot survives the maintenance replace/rollback.
+    Q_INVOKABLE QString snapshotDirectory() const;
+
+    // Total size of the regular files under a directory (recursive, symlinks skipped); 0 when it does not exist.
+    Q_INVOKABLE qint64 directoryBytes(const QString &path) const;
+
 private:
     InstalledInfo readInstalled() const;
 };

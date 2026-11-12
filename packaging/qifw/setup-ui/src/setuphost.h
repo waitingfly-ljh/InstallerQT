@@ -52,6 +52,10 @@ public:
     Q_INVOKABLE QString probeDirectory(const QString &path);
     Q_INVOKABLE qint64 freeBytes(const QString &path);
     Q_INVOKABLE QString normalizeDirPath(const QString &path);
+    // Product user data root (roaming = presets/preferences, local = cache/logs) and directory size estimate;
+    // the snapshot page shows both before the backup is taken.
+    Q_INVOKABLE QString userDataDirectory(bool roaming);
+    Q_INVOKABLE qint64 directoryBytes(const QString &path);
     Q_INVOKABLE void refreshInstalled();
     Q_INVOKABLE bool launchApp(const QString &installDir);
     Q_INVOKABLE bool revealLogs();

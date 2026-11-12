@@ -1,5 +1,6 @@
 // UiBtn.qml
 import QtQuick
+import QtQuick.Layouts
 import SetupUi
 
 // Generic button for the 11-11 design: 124x44, radius 8, 14px Medium label.
@@ -29,6 +30,11 @@ Rectangle {
 
     implicitWidth: hug ? content.implicitWidth + 64 : Math.max(theme.btnW, content.implicitWidth + 32)
     implicitHeight: theme.btnH
+    // A layout must never shrink a button below its designed size: without this the layout may
+    // hand the button less than 124px, and since the label is centred and not clipped, the text
+    // ends up outside the fill (or cut by the panel edge) instead of the row overflowing.
+    Layout.minimumWidth: implicitWidth
+    Layout.minimumHeight: implicitHeight
     radius: theme.radiusBtn
     border.width: (!b.enabledState || b.primary || b.danger) ? 0 : 1
     border.color: theme.btnSecondaryLine

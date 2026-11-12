@@ -39,7 +39,61 @@ QtObject {
         if (v === "dataScope") return 6
         if (v === "confirm") return 7
         if (v === "uninstalled") return 8
+        // Appended last so the indices above stay stable (the screenshot shell and main.cpp --view rely on them).
+        if (v === "snapshot") return 9
         return 0
+    }
+
+    // --- Pre-install snapshot (maintenance flows) ---
+    // The maintenance screens promise a recoverable snapshot; this state drives the snapshot page and the
+    // rollback dialog. The engine owns the real files (<snapshotRoot>), the controller only mirrors the choice.
+    property bool snapshotEnabled: true
+    property string snapshotName: ""
+    // Shopping list: the default name is timestamped so repeated maintenance runs never clash.
+    function defaultSnapshotName() {
+        const d = new Date()
+        const p = (n) => (n < 10 ? "0" : "") + n
+        return "snapshot" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate())
+               + "-" + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds())
+    }
+    readonly property var snapshots: Host.engine.snapshots
+    readonly property bool hasSnapshots: snapshots.length > 0
+    property bool rollbackOpen: false
+    property string rollbackName: ""
+    property string rollbackError: ""
+
+    // Maintenance page -> snapshot page; a fresh install has nothing to back up and starts directly.
+    function beginMaintenance() {
+        if (!installed.installed) {
+            beginInstall()
+            return
+        }
+        snapshotEnabled = true
+        snapshotName = defaultSnapshotName()
+        Host.engine.refreshSnapshots()
+        view = "snapshot"
+    }
+    function backFromSnapshot() { view = "maintenance" }
+
+    function openRollback() {
+        Host.engine.refreshSnapshots()
+        rollbackError = ""
+        rollbackName = snapshots.length > 0 ? snapshots[0].name : ""
+        rollbackOpen = true
+    }
+    function confirmRollback() {
+        const name = rollbackName.length > 0 ? rollbackName
+                   : snapshots.length > 0 ? snapshots[0].name : ""
+        if (name.length === 0) {
+            rollbackError = qsTr("No snapshot available.")
+            return
+        }
+        if (!Host.engine.restoreSnapshot(name)) {
+            rollbackError = qsTr("Rolling back failed. The snapshot data is kept; please check the log and retry.")
+            return
+        }
+        rollbackOpen = false
+        refreshInstalled()
     }
 
     // --- Fresh-install navigation ---
@@ -191,7 +245,10 @@ QtObject {
             "shortcutDesktop": installOptions.shortcutDesktop,
             "assoc3mf": installOptions.assoc3mf,
             "assocStl": installOptions.assocStl,
-            "launchAfterInstall": installOptions.launchAfterInstall
+            "launchAfterInstall": installOptions.launchAfterInstall,
+            // Only maintenance runs take a snapshot (a fresh install has nothing to back up).
+            "snapshot": installed.installed && snapshotEnabled,
+            "snapshotName": snapshotEnabled ? snapshotName : ""
         })
     }
 
@@ -221,6 +278,10 @@ QtObject {
         failureCode = code
         failureCodeText = code > 0 ? String(code) : ""
         failureMessage = pendingSummary
+        // The snapshot is the recovery path, so say so right in the dialog that reports the failure.
+        if (!failureWhileUninstalling && Host.engine.lastSnapshot.length > 0)
+            failureMessage += "\n" + qsTr("The pre-install snapshot \"%1\" was kept; roll back to it from the maintenance screen.")
+                                          .arg(Host.engine.lastSnapshot)
         view = "failure"
     }
 

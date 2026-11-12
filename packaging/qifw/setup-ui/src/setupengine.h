@@ -24,6 +24,11 @@ class SetupEngine : public QObject
     Q_PROPERTY(int phaseIndex READ phaseIndex NOTIFY phaseChanged)
     Q_PROPERTY(QString detail READ detail NOTIFY detailChanged)
     Q_PROPERTY(QString logPath READ logPath NOTIFY logPathChanged)
+    // Pre-install snapshots (maintenance flows): [{ name, version, createdAt, bytes, path }], newest first.
+    Q_PROPERTY(QVariantList snapshots READ snapshots NOTIFY snapshotsChanged)
+    Q_PROPERTY(QString snapshotRoot READ snapshotRoot NOTIFY snapshotsChanged)
+    // Name of the snapshot created for the current run (empty when the user chose not to create one).
+    Q_PROPERTY(QString lastSnapshot READ lastSnapshot NOTIFY lastSnapshotChanged)
 
 public:
     explicit SetupEngine(Environment *env, QObject *parent = nullptr);
@@ -35,6 +40,16 @@ public:
     int phaseIndex() const { return m_phaseIndex; }
     QString detail() const { return m_detail; }
     QString logPath() const { return m_logPath; }
+    QVariantList snapshots() const { return m_snapshots; }
+    QString snapshotRoot() const;
+    QString lastSnapshot() const { return m_lastSnapshot; }
+
+    // Rescan <snapshotRoot> on disk (called at startup and after create/restore).
+    Q_INVOKABLE void refreshSnapshots();
+    // Restore the user data of a snapshot (program files are restored by the install itself).
+    Q_INVOKABLE bool restoreSnapshot(const QString &name);
+    // Snapshot name rules: starts with a letter, then letters/digits/._-, 1..65 characters.
+    Q_INVOKABLE bool isValidSnapshotName(const QString &name) const;
 
     // When overwrite=false and the target directory already has content, the engine appends -x to force overwrite (QIFW refuses by default).
     Q_INVOKABLE void startInstall(const QString &targetDir, const QVariantMap &options);
@@ -55,11 +70,21 @@ signals:
     void phaseChanged();
     void detailChanged();
     void logPathChanged();
+    void snapshotsChanged();
+    void lastSnapshotChanged();
     void finished(int exitCode, const QString &summary);
     void cancelled();
 
 private:
     void startProcess(const QString &program, const QStringList &args, const QString &phase);
+    // Maintenance: take the pre-install snapshot (program dir + user data) before the old directory is replaced.
+    enum class SnapshotResult { Ok, Failed, Cancelled };
+    SnapshotResult createSnapshot(const QString &name, QString &error);
+    void setLastSnapshot(const QString &name);
+    // Runs the snapshot copy after the phase has been painted (called from startInstall).
+    void prepareSnapshot();
+    // startInstall continuation: prepare the install directory and launch QIFW (after the optional snapshot).
+    void continueInstall();
     void onReadyRead();
     void onFinished(int exitCode, QProcess::ExitStatus status);
     void advancePhaseFromLine(const QString &line);
@@ -117,4 +142,11 @@ private:
     bool m_assocStl = false;
     // "Launch after install": the Complete page's "Launch now" default action reads it (Main.qml); here we only store the choice.
     bool m_launchAfterInstall = false;
+    // Pre-install snapshot: the name the UI asked for, and the one that was actually created.
+    bool m_snapshotRequested = false;
+    QString m_snapshotName;
+    QString m_lastSnapshot;
+    QVariantList m_snapshots;
+    // Progress the install process starts from (a snapshot run leaves it at 8%).
+    int m_startProgress = 0;
 };

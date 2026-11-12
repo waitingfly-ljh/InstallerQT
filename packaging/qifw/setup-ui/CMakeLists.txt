@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.21)
 project(OrbbecSlicerSetup VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -54,6 +54,7 @@ qt_add_qml_module(OrbbecSlicerSetup
         UiBtn.qml
         UiCheck.qml
         ErrorDialog.qml
+        RollbackDialog.qml
         BrandMark.qml
         SetupController.qml
         UiTheme.qml
@@ -66,6 +67,7 @@ qt_add_qml_module(OrbbecSlicerSetup
         pages/ProgressPage.qml
         pages/CompletePage.qml
         pages/MaintenancePage.qml
+        pages/SnapshotPage.qml
         pages/DataScopePage.qml
         pages/UninstallConfirmPage.qml
     SOURCES
@@ -105,6 +107,7 @@ qt_add_translations(OrbbecSlicerSetup
         UiBtn.qml
         UiCheck.qml
         ErrorDialog.qml
+        RollbackDialog.qml
         BrandMark.qml
         SetupController.qml
         UiTheme.qml
@@ -117,6 +120,7 @@ qt_add_translations(OrbbecSlicerSetup
         pages/ProgressPage.qml
         pages/CompletePage.qml
         pages/MaintenancePage.qml
+        pages/SnapshotPage.qml
         pages/DataScopePage.qml
         pages/UninstallConfirmPage.qml
 )

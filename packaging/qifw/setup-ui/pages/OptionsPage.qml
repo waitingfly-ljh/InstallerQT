@@ -216,10 +216,14 @@ Item {
         Item { Layout.preferredHeight: 28 }
 
         // Four install options in two columns (design: column pitch 252px, row pitch 34px).
+        // The cell is 190px and the gap 62px so that one column still starts 252px into the content
+        // column (498 -> 750 on the design frame) while the grid itself is exactly 442px wide.
+        // A 240px cell made the grid's implicit width 492px, i.e. 50px wider than the content column:
+        // the layout then squeezed the action row and the Install label was clipped by the panel edge.
         Grid {
             id: optionGrid
             columns: 2
-            columnSpacing: 12
+            columnSpacing: 62
             rowSpacing: 10
 
             Repeater {
@@ -234,8 +238,9 @@ Item {
                 delegate: UiCheck {
                     required property var modelData
                     // Fixed column width so the second column starts at the design's x (252px pitch)
-                    // and long translations elide instead of overlapping the neighbour.
-                    width: 240
+                    // and long translations elide instead of overlapping the neighbour. 190px is the
+                    // share of the 442px column that keeps the grid inside it (see the Grid above).
+                    width: 190
                     height: 24
                     text: modelData.label
                     checked: page[modelData.key] === true

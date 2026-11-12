@@ -59,6 +59,12 @@ ApplicationWindow {
     AppFrame {
         anchors.fill: parent
 
+        // The frame only emits the intent: the window owns the actual close/minimize (a frameless
+        // window cannot rely on the system buttons, and closing has to respect the engine's busy
+        // state), so both signals must be wired here or the drawn buttons do nothing.
+        onCloseRequested: window.requestClose()
+        onMinimizeRequested: window.showMinimized()
+
         content: [
             StackLayout {
                 id: pageStack
@@ -113,8 +119,11 @@ ApplicationWindow {
                     onProceedRequested: {
                         ctl.installOptions.installDir = Host.normalizeDirPath(ctl.installed.installDir)
                         ctl.installOptions.installParentDir = Host.installParentDirForDir(ctl.installed.installDir)
-                        ctl.beginInstall()
+                        // Maintenance always walks through the snapshot screen first (it is what the
+                        // "recoverable snapshot" promise on this page refers to).
+                        ctl.beginMaintenance()
                     }
+                    onRestoreRequested: ctl.openRollback()
                 }
 
                 // ---- Installing (the failure dialog is drawn on top of this page) ----
@@ -180,6 +189,20 @@ ApplicationWindow {
                     onPrimaryAction: Qt.quit()
                     onSecondaryAction: Host.revealLogs()
                 }
+
+                // ---- Maintenance: pre-install snapshot (index 9, appended so the indices above stay stable) ----
+                SnapshotPage {
+                    mode: ctl.mode === "fresh" ? "repair" : ctl.mode
+                    currentVersion: ctl.installed.version
+                    targetVersion: ctl.targetVersion
+                    installDir: ctl.installed.installDir
+                    snapshotEnabled: ctl.snapshotEnabled
+                    snapshotName: ctl.snapshotName
+                    onNameChanged: (n) => ctl.snapshotName = n
+                    onEnabledToggled: (on) => ctl.snapshotEnabled = on
+                    onBackRequested: ctl.backFromSnapshot()
+                    onProceedRequested: ctl.beginInstall()
+                }
             }
         ]
     }
@@ -195,5 +218,16 @@ ApplicationWindow {
         steps: ctl.failureSteps
         onRetryRequested: ctl.retry()
         onCancelRequested: window.requestClose()
+    }
+
+    // Rollback dialog: restores a pre-install snapshot from the maintenance screen (design: 回滚数据).
+    RollbackDialog {
+        anchors.fill: parent
+        open: ctl.rollbackOpen
+        snapshots: ctl.snapshots
+        selectedName: ctl.rollbackName
+        errorText: ctl.rollbackError
+        onCancelRequested: ctl.rollbackOpen = false
+        onConfirmRequested: ctl.confirmRollback()
     }
 }

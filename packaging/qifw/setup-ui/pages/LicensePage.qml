@@ -2,7 +2,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
-import QtQuick.Controls.Basic
 import SetupUi
 
 // License agreement (design: 许可协议). The text itself lives in resources/eula.txt (embedded as
@@ -93,13 +92,18 @@ Item {
                 anchors.right: parent.right
                 anchors.top: divider.bottom
                 anchors.bottom: parent.bottom
-                anchors.margins: 20
+                // The body keeps the design's 20px inner padding (text ink ends at x=896 of the
+                // 442px card). The scroll bar is drawn separately below: Qt's built-in ScrollBar is
+                // parented to the flickable, so it inherited this padding and sat 20px away from the
+                // card edge with a track only as tall as the padded area.
+                anchors.leftMargin: 20
+                anchors.rightMargin: 20
                 anchors.topMargin: 20
+                anchors.bottomMargin: 20
                 clip: true
                 contentWidth: width
                 contentHeight: body.implicitHeight
                 boundsBehavior: Flickable.StopAtBounds
-                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
                 Text {
                     id: body
@@ -111,6 +115,55 @@ Item {
                     font.family: theme.fontFamily
                     font.pixelSize: theme.fontBody
                     color: theme.textBody
+                }
+            }
+
+            // Scroll bar measured on the 许可协议 frame: a 4px #bababa pill whose right edge stops
+            // 4px short of the card's right edge, running from the divider down to the card bottom,
+            // with a long handle (the frame shows 113px of a 238px track, i.e. ~47%).
+            Item {
+                id: barTrack
+                anchors.right: parent.right
+                anchors.rightMargin: 4
+                anchors.top: divider.bottom
+                anchors.bottom: parent.bottom
+                width: 4
+                visible: flick.contentHeight > flick.height + 0.5
+
+                readonly property real scrollable: Math.max(1, flick.contentHeight - flick.height)
+                readonly property real travel: Math.max(0, height - thumb.height)
+
+                Rectangle {
+                    id: thumb
+                    width: 4
+                    radius: 2
+                    color: theme.scrollThumb
+                    // Whichever is longer: the true visible/content ratio, or the design's 47% floor,
+                    // so the handle stays as easy to grab as the design intends.
+                    height: Math.min(barTrack.height,
+                                     Math.max(barTrack.height * 0.47,
+                                              barTrack.height * flick.height
+                                              / Math.max(flick.height, flick.contentHeight)))
+                    y: barTrack.travel * Math.max(0, Math.min(1, flick.contentY / barTrack.scrollable))
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        property real pressY: 0
+                        property real pressContentY: 0
+                        onPressed: (m) => {
+                            pressY = m.y
+                            pressContentY = flick.contentY
+                        }
+                        onPositionChanged: (m) => {
+                            if (!pressed || barTrack.travel <= 0)
+                                return
+                            flick.contentY = Math.max(0, Math.min(barTrack.scrollable,
+                                                                pressContentY
+                                                                + (m.y - pressY) / barTrack.travel
+                                                                  * barTrack.scrollable))
+                        }
+                    }
                 }
             }
         }
