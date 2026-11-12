@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
   Build the screenshot build of the shell and capture screenshots view by view (for UI verification).
@@ -16,7 +16,7 @@
   powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\capture-ui.ps1 -Models 'options|failure'
 #>
 param(
-    [string]$Models = 'welcome|license|options|maintenance|progress|complete|failure|uninstall-scope|uninstall-confirm|uninstall-done|option-shortcutDesktop|option-assoc3mf|option-assocStl|option-launchAfterInstall',
+    [string]$Models = 'welcome|license|options|maintenance|snapshot|rollback|progress|complete|failure|uninstall-scope|uninstall-confirm|uninstall-done|option-shortcutDesktop|option-assoc3mf|option-assocStl|option-launchAfterInstall',
     # UI language for the captures (e.g. zh_CN). Empty keeps the default (English / system locale).
     # Captures are written as <view>-<shortlang>.png so they can be compared side by side with the English set.
     [string]$Lang = '',
@@ -36,7 +36,7 @@ $Exe = Join-Path $BuildDir 'OrbbecSlicerSetup.exe'
 if (-not (Test-Path -LiteralPath $QtBin)) { throw "Qt not found: $QtBin" }
 
 # View names = SetupController.view names; the three uninstall screens use their own names (main.cpp shotModelFor maps them to dataScope/confirm/uninstalled).
-$Views = @('welcome', 'license', 'options', 'maintenance', 'progress', 'complete', 'failure',
+$Views = @('welcome', 'license', 'options', 'maintenance', 'snapshot', 'rollback', 'progress', 'complete', 'failure',
            'uninstall-scope', 'uninstall-confirm', 'uninstall-done')
 $OptionKeys = @('shortcutDesktop', 'assoc3mf', 'assocStl', 'launchAfterInstall')
 
