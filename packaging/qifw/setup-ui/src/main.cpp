@@ -236,6 +236,13 @@ QVariantMap shotModelFor(const QString &name)
         // The rollback dialog is an overlay on the maintenance screen, not its own page.
         m.insert(QStringLiteral("view"), QStringLiteral("maintenance"));
         m.insert(QStringLiteral("rollback"), true);
+    } else if (name == QLatin1String("failure-code")) {
+        // Skeleton B of the failure dialog (error code + retry, no step list).
+        m.insert(QStringLiteral("view"), QStringLiteral("failure"));
+        m.insert(QStringLiteral("noSteps"), true);
+        m.insert(QStringLiteral("failure"), 5);
+        m.insert(QStringLiteral("message"),
+                 QStringLiteral("The configuration folder could not be written. Check the permissions and try again."));
     } else if (!name.isEmpty()) {
         m.insert(QStringLiteral("view"), name);
     }
@@ -259,10 +266,15 @@ QObject *makeShotCapture(QQmlEngine *engine, QJSEngine *js)
                              for (QWindow *win : QGuiApplication::topLevelWindows()) {
                                  if (!win->isVisible())
                                      continue;
-                                 // The window may not have finished its first composite (isExposed() is false);
-                                 // grabWindow(winId) would then capture background/a black block, so redraw the whole window instead.
+                                 // Always render the scene here instead of screenshotting the window handle:
+                                 //  - before the first composite (isExposed() false) the handle grab yields
+                                 //    background/a black block;
+                                 //  - the shell window is translucent (rounded corners via an AppFrame mask),
+                                 //    and QScreen::grabWindow on a layered window only returns white.
+                                 // QQuickWindow::grabWindow() re-renders the scene graph, so the mask alpha is
+                                 // included and the PNG keeps transparent corner pixels.
                                  auto *quick = qobject_cast<QQuickWindow *>(win);
-                                 if (quick && !win->isExposed())
+                                 if (quick)
                                      saved = quick->grabWindow().save(path, "PNG");
                                  else
                                      saved = win->screen()->grabWindow(win->winId()).save(path, "PNG");
@@ -616,23 +628,30 @@ int main(int argc, char *argv[])
             QObject *ctl = root ? root->property("ctl").value<QObject *>() : nullptr;
             if (!ctl) { qCritical() << "SELFTEST controller not found"; QCoreApplication::exit(2); return; }
             ctl->setProperty("targetVersion", QStringLiteral("1.0.0"));
-            const auto check = [ctl](bool installed, const QString &version, const QString &expect) {
+            const auto check = [ctl](const QString &target, bool installed, const QString &version, const QString &expect) {
                 QVariantMap m;
                 m.insert(QStringLiteral("installed"), installed);
                 m.insert(QStringLiteral("version"), version);
                 m.insert(QStringLiteral("installDir"), installed ? QStringLiteral("X") : QString());
                 ctl->setProperty("installed", m);
+                ctl->setProperty("targetVersion", target);
                 QMetaObject::invokeMethod(ctl, "beginInstall", Qt::DirectConnection);
                 const QString got = ctl->property("runMode").toString();
-                qInfo().noquote() << QStringLiteral("SELFTEST runMode installed=%1 version=%2 got=%3 expect=%4")
-                                         .arg(installed ? 1 : 0).arg(version, got, expect);
+                qInfo().noquote() << QStringLiteral("SELFTEST runMode target=%1 installed=%2 version=%3 got=%4 expect=%5")
+                                         .arg(target).arg(installed ? 1 : 0).arg(version, got, expect);
                 return got == expect;
             };
             bool ok = true;
-            ok = check(false, QString(), QStringLiteral("fresh")) && ok;
-            ok = check(true, QStringLiteral("1.0.0"), QStringLiteral("repair")) && ok;
-            ok = check(true, QStringLiteral("0.9.0"), QStringLiteral("upgrade")) && ok;
-            ok = check(true, QStringLiteral("2.0.0"), QStringLiteral("downgrade")) && ok;
+            ok = check(QStringLiteral("1.0.0"), false, QString(), QStringLiteral("fresh")) && ok;
+            ok = check(QStringLiteral("1.0.0"), true, QStringLiteral("1.0.0"), QStringLiteral("repair")) && ok;
+            ok = check(QStringLiteral("1.0.0"), true, QStringLiteral("0.9.0"), QStringLiteral("upgrade")) && ok;
+            ok = check(QStringLiteral("1.0.0"), true, QStringLiteral("2.0.0"), QStringLiteral("downgrade")) && ok;
+            // A prerelease sorts below its release, so 1.0.0-beta.1 over 1.0.0 is a downgrade...
+            ok = check(QStringLiteral("1.0.0-beta.1"), true, QStringLiteral("1.0.0"), QStringLiteral("downgrade")) && ok;
+            // ...and the trailer's 4-byte truncated "0.4." must still read as 0.4.0, not as a downgrade of
+            // 0.4.0-beta.1 (the regression this selftest pins).
+            ok = check(QStringLiteral("0.4."), true, QStringLiteral("0.4.0-beta.1"), QStringLiteral("upgrade")) && ok;
+            ok = check(QStringLiteral("0.4.0-beta.1"), true, QStringLiteral("0.4.0-beta.1"), QStringLiteral("repair")) && ok;
             QCoreApplication::exit(ok ? 0 : 2);
         });
         return app.exec();

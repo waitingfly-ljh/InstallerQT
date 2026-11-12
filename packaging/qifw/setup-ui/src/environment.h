@@ -51,6 +51,13 @@ public:
     // Version source: prefer the registry, fall back to maintenancetool.exe in the install directory.
     Q_INVOKABLE QVariantMap installedInfo() const;
 
+    // Installed product version taken from the QIFW metadata written into the install
+    // directory (<dir>/components.xml: the package <Version>, falling back to
+    // <ApplicationVersion>). The registry "Version" value is only a cache written by the
+    // shell after a successful install, so older installs must read the metadata itself.
+    // Returns an empty string when the file is missing or unreadable.
+    QString installedVersionFromDir(const QString &installDir) const;
+
     // The main executable name in the install directory varies by product (currently
     // ob-slicer.exe; legacy packages use OrbbecSlicer.exe).
     // Returns the first existing executable; returns an empty string when none exists.

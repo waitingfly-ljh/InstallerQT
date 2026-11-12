@@ -8,6 +8,7 @@
 #include <QStandardPaths>
 #include <QStorageInfo>
 #include <QVariantMap>
+#include <QXmlStreamReader>
 #include <QCoreApplication>
 #include <QHash>
 #include <QMutex>
@@ -190,6 +191,11 @@ InstalledInfo Environment::readInstalled() const
         info.installDir = reg.value(QStringLiteral("InstallDir")).toString();
         info.version = reg.value(QStringLiteral("Version")).toString();
         info.installed = QFileInfo(info.installDir + QStringLiteral("/maintenancetool.exe")).exists();
+        // The registry value is only a cache written by the shell at install time; installs made
+        // by an older shell have no "Version" value, so read QIFW's own metadata instead of
+        // reporting "Unknown" on the maintenance screen.
+        if (info.installed && info.version.isEmpty())
+            info.version = installedVersionFromDir(info.installDir);
         if (!info.installed)
             info.installDir.clear();
     }
@@ -202,10 +208,43 @@ InstalledInfo Environment::readInstalled() const
         if (mt.exists()) {
             info.installed = true;
             info.installDir = QDir::toNativeSeparators(dir);
-            info.version.clear();
+            info.version = installedVersionFromDir(dir);
         }
     }
     return info;
+}
+
+QString Environment::installedVersionFromDir(const QString &installDir) const
+{
+    if (installDir.isEmpty())
+        return QString();
+    // components.xml is written by QIFW next to maintenancetool.exe after every install. The
+    // package <Version> is the product version that was actually installed (the surrounding
+    // <ApplicationVersion> is the installer's own product version and differs from it).
+    QFile file(QDir(installDir).filePath(QStringLiteral("components.xml")));
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return QString();
+    QXmlStreamReader xml(&file);
+    QString applicationVersion;
+    QString packageVersion;
+    bool inPackage = false;
+    while (!xml.atEnd()) {
+        xml.readNext();
+        if (xml.isStartElement()) {
+            const auto name = xml.name();
+            if (name == u"ApplicationVersion")
+                applicationVersion = xml.readElementText().trimmed();
+            else if (name == u"Package")
+                inPackage = true;
+            else if (name == u"Version" && inPackage)
+                packageVersion = xml.readElementText().trimmed();
+        } else if (xml.isEndElement() && xml.name() == u"Package") {
+            inPackage = false;
+        }
+    }
+    if (xml.hasError())
+        return QString();
+    return packageVersion.isEmpty() ? applicationVersion : packageVersion;
 }
 
 QVariantMap Environment::installedInfo() const

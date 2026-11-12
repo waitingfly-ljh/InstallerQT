@@ -95,10 +95,10 @@ Item {
             wrapMode: Text.WordWrap
             font.family: theme.fontFamily
             font.pixelSize: theme.fontTitle
-            font.weight: Font.Bold
+            font.weight: theme.fontTitleWeight
             color: theme.brand
         }
-        Item { Layout.preferredHeight: 4 }
+        Item { Layout.preferredHeight: 7 }
 
         Text {
             Layout.fillWidth: true
@@ -109,8 +109,9 @@ Item {
             color: theme.textBody
         }
 
-        // Design rhythm: the settings block starts well below the lead line.
-        Item { Layout.preferredHeight: 111 }
+        // Design rhythm: the settings block starts well below the lead line (section ink at y=188,
+        // i.e. page y=152; lead ink ends at page y=57).
+        Item { Layout.preferredHeight: 97 }
 
         Text {
             text: qsTr("Install location")
@@ -121,13 +122,13 @@ Item {
         }
         Item { Layout.preferredHeight: 9 }
 
-        // Location field with the folder button inside its right edge (design: one 442px control,
-        // 34px tall, #f5f5f5 fill, #d7d7d7 border, grey 43px browse button).
+        // Location field with the folder button inside its right edge (design: one 443x33 control,
+        // #f5f5f5 fill, #d7d7d7 border, grey 43x33 browse button with 6px corners).
         Rectangle {
             id: dirField
             Layout.fillWidth: true
             implicitHeight: theme.fieldH
-            radius: theme.radiusField
+            radius: theme.radiusFieldTight
             color: theme.card
             border.width: 1
             border.color: dirInput.activeFocus ? theme.brand : theme.fieldLine
@@ -140,7 +141,8 @@ Item {
                 verticalAlignment: TextInput.AlignVCenter
                 selectByMouse: true
                 font.family: theme.fontFamily
-                font.pixelSize: theme.fontBody
+                // Measured: the path ink is em≈14 (the field is a form value, not body copy).
+                font.pixelSize: theme.fontLabel
                 color: theme.text
                 selectionColor: theme.brandSoft
                 selectedTextColor: theme.text
@@ -169,7 +171,7 @@ Item {
 
                 Rectangle {
                     anchors.fill: parent
-                    radius: theme.radiusField
+                    radius: theme.radiusFieldBtn
                     color: browseMa.containsMouse ? theme.line : theme.fieldBtn
                 }
                 Rectangle {
@@ -200,9 +202,10 @@ Item {
             }
         }
 
-        Item { Layout.preferredHeight: 6 }
+        Item { Layout.preferredHeight: 10 }
 
-        // Required space, with the size itself in the brand color (design: 预计需要 1.8 GB 可用空间, 14px).
+        // Required space, with the size itself in the brand color (design: 预计需要 1.8 GB 可用空间,
+        // ink at page y=223).
         Text {
             Layout.fillWidth: true
             textFormat: Text.StyledText
@@ -213,7 +216,7 @@ Item {
             color: theme.textBody
         }
 
-        Item { Layout.preferredHeight: 28 }
+        Item { Layout.preferredHeight: 36 }
 
         // Four install options in two columns (design: column pitch 252px, row pitch 34px).
         // The cell is 190px and the gap 62px so that one column still starts 252px into the content
@@ -242,6 +245,7 @@ Item {
                     // share of the 442px column that keeps the grid inside it (see the Grid above).
                     width: 190
                     height: 24
+                    labelSize: theme.fontLabel
                     text: modelData.label
                     checked: page[modelData.key] === true
                     onToggled: {

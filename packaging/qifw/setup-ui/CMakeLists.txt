@@ -53,11 +53,16 @@ qt_add_qml_module(OrbbecSlicerSetup
         Main.qml
         UiBtn.qml
         UiCheck.qml
+        UiField.qml
+        UiRadio.qml
+        UiSelect.qml
         ErrorDialog.qml
         RollbackDialog.qml
         BrandMark.qml
         SetupController.qml
         UiTheme.qml
+        UiNoteCard.qml
+        UiScrollArea.qml
         LoadEntry.qml
         QmlSmoke.qml
         AppFrame.qml
@@ -106,11 +111,16 @@ qt_add_translations(OrbbecSlicerSetup
         Main.qml
         UiBtn.qml
         UiCheck.qml
+        UiField.qml
+        UiRadio.qml
+        UiSelect.qml
         ErrorDialog.qml
         RollbackDialog.qml
         BrandMark.qml
         SetupController.qml
         UiTheme.qml
+        UiNoteCard.qml
+        UiScrollArea.qml
         LoadEntry.qml
         QmlSmoke.qml
         AppFrame.qml

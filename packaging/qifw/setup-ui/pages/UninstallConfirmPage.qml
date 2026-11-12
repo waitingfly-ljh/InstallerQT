@@ -3,7 +3,13 @@ import QtQuick
 import QtQuick.Layouts
 import SetupUi
 
-// Uninstall 2/3: confirmation + keep user data folder checkbox.
+// Uninstall 2/3: confirmation, the two 80px note cards and the keep-user-data checkbox.
+//
+// Measured on 确认卸载: title ink 41..64, lead ink 78..93, card 1 140..219 (#fff7e9 warning wash,
+// title "personal presets are kept" + 12px body), card 2 236..315 (#f2f9f9 + brand border,
+// "not affected"), then the action row at 476..519 with the danger button at 817..938.
+// The keep-data checkbox is not part of that frame; it sits in the empty band between the cards and
+// the action row so the feature is kept without disturbing the measured geometry.
 Item {
     id: page
 
@@ -17,136 +23,89 @@ Item {
     signal backRequested()
     signal confirmRequested()
 
-    readonly property string summary: (removeAllData
-        ? qsTr("Program files will be removed and all OrbbecSlicer application data on this machine deleted: presets, calibration results, preferences, caches and credentials.")
-        : qsTr("Program files will be removed; custom presets, calibration results, preferences and non-sensitive device info are kept; caches and login credentials are cleared."))
-        + qsTr(" Files inside the install directory are deleted too, so keep personal projects outside it.")
-        + (keepDataDir ? qsTr(" The user data folder created at install time is also kept.") : "")
+    readonly property string cardTitle: page.removeAllData
+        ? qsTr("Delete all application data on this machine")
+        : qsTr("Personal presets and preferences will be kept")
+    readonly property string cardBody: page.removeAllData
+        ? qsTr("Presets, calibration results, preferences and device info are deleted as well.")
+        : qsTr("Login tokens, cloud service credentials, LAN access codes and caches will be cleared.")
 
-    ColumnLayout {
-        anchors.fill: parent
+    // Vertical rhythm in ink units (content column starts at window y=36, so page y = window y - 36).
+    Column {
+        width: parent.width
         spacing: 0
 
-        Text {
-            Layout.fillWidth: true
-            text: qsTr("Confirm uninstall")
-            wrapMode: Text.WordWrap
-            font.family: theme.fontFamily
-            font.pixelSize: theme.fontTitle
-            font.weight: Font.Bold
-            color: theme.brand
-        }
-        Item { Layout.preferredHeight: 9 }
-        Text {
-            Layout.fillWidth: true
-            text: qsTr("Confirm the data scope.")
-            wrapMode: Text.WordWrap
-            lineHeight: 1.5
-            font.family: theme.fontFamily
-            font.pixelSize: theme.fontLead
-            color: theme.textBody
-        }
-
-        Item { Layout.preferredHeight: 24 }
-
-        // Summary of the selected scope: updates with the data scope and the "keep user data folder" checkbox.
-        Text {
-            Layout.fillWidth: true
-            text: page.summary
-            wrapMode: Text.WordWrap
-            lineHeight: 1.65
-            font.family: theme.fontFamily
-            font.pixelSize: theme.fontBody
-            color: theme.textBody
-        }
-        Item { Layout.preferredHeight: 14 }
-
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.maximumWidth: 560
-            implicitHeight: safeCol.implicitHeight + 28
-            radius: theme.radius
-            color: theme.infoSoft
-            border.width: 1
-            border.color: theme.infoLine
-            Column {
-                id: safeCol
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.margins: 14                       // .info-card padding: 14px 16px
-                anchors.leftMargin: 16
-                anchors.rightMargin: 16
-                spacing: 4
-                Item { width: 1; height: 2 }
-                Text { text: qsTr("Not affected"); font.family: theme.fontFamily; font.pixelSize: theme.fontBody; font.bold: true; color: theme.infoInk }
-                Text {
-                    // Column does not pass width down: Text defaults to implicitWidth (the longest line),
-                    // and without constraining it the card would be stretched to its maximum width.
-                    width: safeCol.width
-                    wrapMode: Text.WordWrap
-                    lineHeight: 1.65
-                    text: qsTr("Projects and exported files outside the program directory, plus cloud data for the current account.")
-                    font.family: theme.fontFamily; font.pixelSize: theme.fontBody; color: theme.infoInk
-                }
-                Item {
-                    implicitHeight: 30 + 4
-                    implicitWidth: keepDataDirText.implicitWidth + 26
-                    // Checkbox row (same layout as the check-row on the install options page: 16px checkbox + label starting at 24px),
-                    // with 4px extra above to separate it from the description text.
-                    function toggle() {
-                        const v = !page.keepDataDir
-                        page.keepDataDirToggled(v)
-                    }
-                    Rectangle {
-                        width: 16; height: 16; radius: 3
-                        anchors.verticalCenter: parent.verticalCenter
-                        border.width: 1
-                        border.color: page.keepDataDir ? theme.brand : theme.line
-                        color: page.keepDataDir ? theme.brand : theme.panel
-                        Text {
-                            anchors.centerIn: parent
-                            visible: page.keepDataDir
-                            text: "✓"
-                            color: theme.white
-                            font.pixelSize: 11
-                            font.bold: true
-                        }
-                    }
-                    Text {
-                        id: keepDataDirText
-                        anchors.left: parent.left
-                        anchors.leftMargin: 24
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("Keep the user data folder")
-                        font.family: theme.fontFamily
-                        font.pixelSize: theme.fontBody
-                        color: theme.text
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: parent.toggle()
-                    }
-                }
-            }
-        }
-
-        Item { Layout.fillHeight: true }
-
-        // Action row pinned to the bottom (design mockup .setup-actions { margin-top:auto; padding-top:22px });
-        // .left-action is left-aligned, the remaining buttons are right-aligned.
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.topMargin: 22
-            spacing: theme.btnGap
-            UiBtn { text: qsTr("Back"); chevron: "left"; onClicked: page.backRequested() }
-            Item { Layout.fillWidth: true }
-            UiBtn {
+        Item { width: 1; height: 5 }
+        Item {
+            width: parent.width
+            height: 24
+            Text {
+                anchors.fill: parent
+                verticalAlignment: Text.AlignVCenter
                 text: qsTr("Confirm uninstall")
-                danger: true
-                onClicked: page.confirmRequested()
+                elide: Text.ElideRight
+                font.family: theme.fontFamily
+                font.pixelSize: theme.fontTitle
+                font.weight: theme.fontTitleWeight
+                color: theme.brand
             }
+        }
+        Item { width: 1; height: 13 }
+        Item {
+            width: parent.width
+            height: 16
+            Text {
+                anchors.fill: parent
+                verticalAlignment: Text.AlignVCenter
+                text: qsTr("Confirm the data scope.")
+                elide: Text.ElideRight
+                font.family: theme.fontFamily
+                font.pixelSize: theme.fontLead
+                color: theme.textBody
+            }
+        }
+
+        Item { width: 1; height: 46 }
+        UiNoteCard {
+            width: parent.width
+            // Height follows the body: 80 for the design's one-line copy, one line more in English.
+            height: implicitHeight
+            warn: true
+            title: page.cardTitle
+            body: page.cardBody
+        }
+        Item { width: 1; height: 16 }
+        UiNoteCard {
+            width: parent.width
+            height: implicitHeight
+            title: qsTr("Not affected")
+            body: qsTr("Projects and exported files outside the program directory, plus cloud data for the current account.")
+        }
+
+        // Keep-data checkbox (16px box, 2px brand ring = the design's emphasised variant). It is not
+        // part of the 确认卸载 frame; it sits in the empty band between the cards and the action row.
+        Item { width: 1; height: 20 }
+        UiCheck {
+            strong: true
+            width: parent.width
+            text: qsTr("Keep the user data folder")
+            checked: page.keepDataDir
+            onToggled: page.keepDataDirToggled(!page.keepDataDir)
+        }
+    }
+
+    // Action row pinned to the bottom (design: 475..520, back on the left, danger button right).
+    RowLayout {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        spacing: theme.btnGap
+        UiBtn { text: qsTr("Back"); chevron: "left"; onClicked: page.backRequested() }
+        Item { Layout.fillWidth: true }
+        UiBtn {
+            text: qsTr("Confirm uninstall")
+            danger: true
+            onClicked: page.confirmRequested()
         }
     }
 }

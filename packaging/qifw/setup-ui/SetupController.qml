@@ -135,11 +135,42 @@ QtObject {
         return a === 0 ? "repair" : a > 0 ? "upgrade" : "downgrade"
     }
     function compareVersions(a, b) {
-        const pa = String(a || "").split(/[.-]/).map(x => parseInt(x, 10) || 0)
-        const pb = String(b || "").split(/[.-]/).map(x => parseInt(x, 10) || 0)
-        for (let i = 0; i < Math.max(pa.length, pb.length); ++i) {
-            const x = pa[i] || 0, y = pb[i] || 0
-            if (x !== y) return x > y ? 1 : -1
+        // "<numbers>[-<prerelease>]": only the part before '-' is numeric. A prerelease tag sorts BELOW its
+        // release (0.4.0-beta.1 < 0.4.0); parsing "beta" as 0 and "1" as an extra segment did the opposite,
+        // so re-installing 0.4.0-beta.1 over 0.4.0-beta.1 was classified as a downgrade.
+        function parseVersion(v) {
+            const s = String(v || "").trim()
+            const dash = s.indexOf('-')
+            return {
+                nums: (dash >= 0 ? s.slice(0, dash) : s).split('.').map(x => parseInt(x, 10) || 0),
+                pre: dash >= 0 ? s.slice(dash + 1) : ""
+            }
+        }
+        function cmpNumber(x, y) { return x === y ? 0 : (x > y ? 1 : -1) }
+        const pa = parseVersion(a), pb = parseVersion(b)
+        for (let i = 0; i < Math.max(pa.nums.length, pb.nums.length); ++i) {
+            const c = cmpNumber(pa.nums[i] || 0, pb.nums[i] || 0)
+            if (c !== 0) return c
+        }
+        // Same numbers: a release outranks any prerelease of it.
+        if (!pa.pre && !pb.pre) return 0
+        if (!pa.pre) return 1
+        if (!pb.pre) return -1
+        // Semver prerelease order: numeric identifiers compare numerically and rank below alphanumeric ones.
+        const ia = pa.pre.split('.'), ib = pb.pre.split('.')
+        for (let i = 0; i < Math.max(ia.length, ib.length); ++i) {
+            const xa = ia[i], xb = ib[i]
+            if (xa === undefined) return -1
+            if (xb === undefined) return 1
+            const na = /^\d+$/.test(xa), nb = /^\d+$/.test(xb)
+            if (na && nb) {
+                const c = cmpNumber(parseInt(xa, 10), parseInt(xb, 10))
+                if (c !== 0) return c
+            } else if (na !== nb) {
+                return na ? -1 : 1
+            } else if (xa !== xb) {
+                return xa > xb ? 1 : -1
+            }
         }
         return 0
     }

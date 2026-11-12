@@ -75,6 +75,10 @@ void SetupHost::setReleaseSelfTest(bool v)
 
 void SetupHost::locatePayload()
 {
+    // The full payload version ships with the UI (see package-setup.ps1): the trailer field is only 4 bytes,
+    // and the extracted payload file is always named "installer.exe", so neither can tell us "0.4.0-beta.1".
+    // Without this the packaged flow reported an empty target version and called every install a downgrade.
+    const QString bundledVersion = bundledPayloadVersion();
     // Packaged mode: the data area immediately follows the executable's tail.
     // Read the file the executable itself lives in, not argv[0]: the path may differ after rename/copy.
     const QString self = QCoreApplication::applicationFilePath();
@@ -90,7 +94,10 @@ void SetupHost::locatePayload()
                 if (payloadOffset > 0 && payloadLength > 0
                     && payloadOffset + payloadLength <= size - kTrailerSize) {
                     m_mode = QStringLiteral("packaged");
-                    m_payloadVersion = QString::fromUtf8(trailer.mid(56, 4)).trimmed();
+                    // Fall back to the (possibly truncated) trailer for packages built before version.txt existed.
+                    m_payloadVersion = bundledVersion;
+                    if (m_payloadVersion.isEmpty())
+                        m_payloadVersion = QString::fromUtf8(trailer.mid(56, 4)).trimmed();
                     f.close();
                     releasePayloadFromSelf();
                     return;
@@ -114,16 +121,32 @@ void SetupHost::locatePayload()
             m_payloadPath = QFileInfo(p).absoluteFilePath();
             m_payloadReady = true;
             m_engine->setPayloadPath(m_payloadPath);
-            // Development mode version comes from the file name <product>-<version>-<arch>-Installer.exe.
-            const QStringList parts = QFileInfo(p).completeBaseName().split(QLatin1Char('-'));
-            if (parts.size() >= 3)
-                m_payloadVersion = parts.at(1);
+            // The launcher extracts the package as payload/installer.exe, so a bundled version wins; a hand-run
+            // package still falls back to <product>-<version>-<arch>-Installer.exe.
+            if (!bundledVersion.isEmpty()) {
+                m_payloadVersion = bundledVersion;
+            } else {
+                const QStringList parts = QFileInfo(p).completeBaseName().split(QLatin1Char('-'));
+                if (parts.size() >= 3)
+                    m_payloadVersion = parts.at(1);
+            }
         } else {
             m_payloadError = tr("The specified installer package does not exist: %1").arg(p);
         }
     }
     m_mode = QStringLiteral("development");
     emit payloadPathChanged();
+}
+
+QString SetupHost::bundledPayloadVersion() const
+{
+    // package-setup.ps1 writes ui/version.txt with the full payload version: the 4-byte trailer field
+    // cannot hold a prerelease tag, and a truncated "0.4." made the maintenance screen classify a
+    // re-install of 0.4.0-beta.1 as a downgrade.
+    QFile file(QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("version.txt")));
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return QString();
+    return QString::fromUtf8(file.readAll()).trimmed();
 }
 
 void SetupHost::releasePayloadFromSelf()

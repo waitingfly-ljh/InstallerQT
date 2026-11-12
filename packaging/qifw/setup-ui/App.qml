@@ -1,4 +1,4 @@
-﻿pragma ComponentBehavior: Bound
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import SetupUi
@@ -133,14 +133,17 @@ Item {
                         onRiskToggled: (c) => {}
                     }
                     // The progress level is hardcoded in the screenshot component: Host.engine is not running in screenshot mode, so reading it always yields 0%.
-                    ProgressPage { id: progressPage; heading: qsTr("Installing OrbbecSlicer"); lead: qsTr("Please keep this window open. The installation does not upload local projects or user presets."); phase: qsTr("Preparing components"); progress: 62; detail: qsTr("Verifying package integrity...") }
-                    CompletePage { id: completePage; title: qsTr("Complete"); description: qsTr("Ready"); primaryText: qsTr("Launch now"); secondaryText: qsTr("View files"); showSecondary: true }
+                    ProgressPage { id: progressPage; heading: qsTr("Installing OrbbecSlicer"); lead: qsTr("Please keep this window open. The installation does not upload local projects or user presets."); phase: qsTr("Preparing components"); progress: 42; detail: qsTr("Verifying package integrity...") }
+                    CompletePage { id: completePage; title: qsTr("Installation complete"); description: qsTr("OrbbecSlicer is ready."); primaryText: qsTr("Launch now"); secondaryText: qsTr("View files"); showSecondary: false }
                     DataScopePage { id: dataScopePage; removeAllData: false }
                     UninstallConfirmPage { id: confirmPage; removeAllData: false; keepDataDir: true; installDir: "C:\\OrbbecSlicer" }
                     CompletePage {
                         id: uninstalledPage
                         title: qsTr("Uninstall complete")
                         description: qsTr("Program files have been removed; personal presets and preferences were retained.")
+                        // Same note card as Main.qml's uninstall-complete page (design: card 313..392).
+                        cardTitle: qsTr("Sensitive credentials cleared")
+                        cardBody: qsTr("Login tokens, cloud service credentials and LAN access codes have been removed from this machine.")
                         primaryText: qsTr("Finish")
                         secondaryText: qsTr("View files")
                         showSecondary: true
@@ -171,7 +174,11 @@ Item {
                          ? shotCtl.failureMessage
                          : qsTr("The installation stopped unexpectedly. Files written so far were rolled back; retry or check the environment and try again.")
                 code: shotCtl !== undefined ? shotCtl.failureCodeText : ""
-                steps: shotCtl !== undefined ? shotCtl.failureSteps : []
+                // The error-code skeleton (design 显示错误代码与重试) has no step list: --view failure-code
+                // injects noSteps so the same dialog renders skeleton B.
+                steps: (shotCtl !== undefined
+                        && !(typeof shotModel !== "undefined" && shotModel !== null && shotModel.noSteps === true))
+                       ? shotCtl.failureSteps : []
             }
 
             // Rollback dialog: same overlay as Main.qml (--view rollback). The engine has no snapshots in

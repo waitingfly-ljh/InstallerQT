@@ -3,7 +3,19 @@ import QtQuick
 import QtQuick.Layouts
 import SetupUi
 
-// Uninstall 1/3: choose the data scope. Defaults to "Keep personal data"; the category table changes with the selection.
+// Uninstall 1/3: choose the data scope. Defaults to "Keep personal data"; the category table reflects
+// the selection.
+//
+// Geometry from the 卸载 frame (all measured; the content column starts at window y=36, so page y =
+// window y - 36):
+//   title ink 42..63                     -> page   6..27
+//   lead ink 79..92 (14px)               -> page  43..56
+//   option 1 card 120..199 (80px)        -> page  84..163  (#fbfbfb, #efefef border)
+//   option 2 card 216..295 (80px)        -> page 180..259  (#eef5f5, brand border = selected)
+//   table header 312..351 (40px)         -> page 276..315  (#f9fcff, #d7eafe border)
+//   data rows 352..403, 405..454, ...    -> page 316.., 52px each (2px separator)
+// The table is taller than the viewport (the frame shows the 4th row cut off at the bottom edge and a
+// page scroll bar at x=948..951), so the whole page body - including the action row - scrolls.
 Item {
     id: page
 
@@ -32,100 +44,134 @@ Item {
             { "name": qsTr("Project files outside the install directory"), "action": qsTr("Keep"), "isDelete": false }
         ]
 
-    ColumnLayout {
+    readonly property var scopeOptions: [
+        { "removeAll": false,
+          "title": qsTr("Keep personal data"),
+          "tag": qsTr("Recommended"),
+          "detail": qsTr("Presets, calibration results, preferences and device info are kept; caches and login credentials are cleared.") },
+        { "removeAll": true,
+          "title": qsTr("Delete all application data on this machine"),
+          "tag": "",
+          "detail": qsTr("Presets, calibration results, preferences and device info are deleted as well.") }
+    ]
+
+    UiScrollArea {
         anchors.fill: parent
-        spacing: 0
 
-        Text {
-            Layout.fillWidth: true
-            text: qsTr("What should happen to personal data?")
-            wrapMode: Text.WordWrap
-            font.family: theme.fontFamily
-            font.pixelSize: theme.fontTitle
-            font.weight: Font.Bold
-            color: theme.brand
-        }
-        // Lead copy (.setup-view .lead { margin: 9px 0 24px })
-        Item { Layout.preferredHeight: 9 }
-        Text {
-            Layout.fillWidth: true
-            text: qsTr("Choose the data scope for this machine.")
-            wrapMode: Text.WordWrap
-            font.family: theme.fontFamily
-            lineHeight: 1.5
-            font.pixelSize: theme.fontLead
-            color: theme.textBody
-        }
-        Item { Layout.preferredHeight: 24 }
-
-        // Two data scope options: defaults to "Keep personal data" (removeAllData=false).
         Column {
-            Layout.fillWidth: true
-            spacing: 8
+            width: parent.width
+            spacing: 0
+
+            // Title row: 24px high so the ink lands on its top edge (design ink 42..63 window).
+            Item {
+                width: parent.width
+                height: 24
+                Text {
+                    anchors.fill: parent
+                    verticalAlignment: Text.AlignVCenter
+                    text: qsTr("What should happen to personal data?")
+                    elide: Text.ElideRight
+                    font.family: theme.fontFamily
+                    font.pixelSize: theme.fontTitle
+                    font.weight: theme.fontTitleWeight
+                    color: theme.brand
+                }
+            }
+            Item { width: 1; height: 16 }
+            Item {
+                width: parent.width
+                height: 16
+                Text {
+                    anchors.fill: parent
+                    verticalAlignment: Text.AlignVCenter
+                    text: qsTr("Choose the data scope for this machine.")
+                    elide: Text.ElideRight
+                    font.family: theme.fontFamily
+                    font.pixelSize: theme.fontBody
+                    color: theme.textBody
+                }
+            }
+            Item { width: 1; height: 28 }
+
+            // Two 80px option cards (radio d19 at 14.5px inset, 16px title + optional "推荐" pill at
+            // 45px, 13px detail line below). The measured card is 442x80 rx13.5.
             Repeater {
-                model: [
-                    { "removeAll": false,
-                      "title": qsTr("Keep personal data"),
-                      "detail": qsTr("Presets, calibration results, preferences and device info are kept; caches and login credentials are cleared.") },
-                    { "removeAll": true,
-                      "title": qsTr("Delete all application data on this machine"),
-                      "detail": qsTr("Presets, calibration results, preferences and device info are deleted as well.") }
-                ]
-                delegate: Rectangle {
-                    id: optionCard
+                model: page.scopeOptions
+                delegate: Item {
+                    id: optionSlot
                     required property var modelData
+                    required property int index
+                    width: page.width
+                    height: theme.optionCardH + (index === 0 ? 16 : 0)
                     readonly property bool selected: page.removeAllData === modelData.removeAll
-                    width: tableColumn ? tableColumn.width : 0
-                    implicitHeight: optionRow.implicitHeight + 20
-                    radius: theme.radius
-                    color: selected ? theme.brandSoft : theme.panel
-                    border.width: 1
-                    border.color: selected ? theme.brand : theme.line
+
+                    Rectangle {
+                        width: parent.width
+                        height: theme.optionCardH
+                        radius: theme.radiusCard
+                        color: optionSlot.selected ? theme.cardSelected : theme.cardPlain
+                        border.width: 1
+                        border.color: optionSlot.selected ? theme.brand : theme.cardPlainLine
+                    }
+
+                    // Radio: d19 ring; the selected one also carries a d14 brand dot.
+                    UiRadio {
+                        x: 14.5
+                        anchors.verticalCenter: parent.top
+                        anchors.verticalCenterOffset: theme.optionCardH / 2
+                        compact: true
+                        checked: optionSlot.selected
+                        onToggled: {
+                            page.removeAllData = optionSlot.modelData.removeAll
+                            page.modeSelected(optionSlot.modelData.removeAll)
+                        }
+                    }
 
                     Row {
-                        id: optionRow
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.leftMargin: 12
-                        anchors.rightMargin: 12
-                        anchors.verticalCenter: parent.verticalCenter
+                        x: theme.optionCardInkX
+                        y: 17
+                        height: 20
                         spacing: 10
-
-                        Rectangle {
-                            width: 16
-                            height: 16
-                            radius: 8
+                        Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            border.width: 1
-                            border.color: optionCard.selected ? theme.brand : theme.line
-                            color: theme.panel
-                            Rectangle {
-                                anchors.centerIn: parent
-                                width: 8
-                                height: 8
-                                radius: 4
-                                visible: optionCard.selected
-                                color: theme.brand
-                            }
+                            text: optionSlot.modelData.title
+                            font.family: theme.fontFamily
+                            font.pixelSize: theme.fontCardInk
+                            font.weight: Font.DemiBold
+                            color: optionSlot.selected ? theme.brand : theme.textBody
                         }
-                        Column {
-                            width: optionRow.width - 26
-                            spacing: 2
+                        // "推荐" pill (measured: 42x20 rx6, brand fill, 12px white label).
+                        Rectangle {
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: optionSlot.modelData.tag.length > 0
+                            width: Math.max(42, tagText.implicitWidth + 8)
+                            height: theme.tagH
+                            radius: theme.radiusTag
+                            color: theme.brand
                             Text {
-                                text: optionCard.modelData.title
-                                font.family: theme.fontFamily
-                                font.pixelSize: theme.fontBody
-                                font.bold: true
-                                color: theme.text
-                            }
-                            Text {
-                                width: parent.width
-                                wrapMode: Text.WordWrap
-                                text: optionCard.modelData.detail
+                                id: tagText
+                                anchors.centerIn: parent
+                                text: optionSlot.modelData.tag
                                 font.family: theme.fontFamily
                                 font.pixelSize: theme.fontSmall
-                                color: theme.muted
+                                color: theme.white
                             }
+                        }
+                    }
+
+                    Item {
+                        x: theme.optionCardInkX
+                        y: 50
+                        width: parent.width - theme.optionCardInkX - 14
+                        height: 16
+                        Text {
+                            anchors.fill: parent
+                            verticalAlignment: Text.AlignVCenter
+                            text: optionSlot.modelData.detail
+                            elide: Text.ElideRight
+                            font.family: theme.fontFamily
+                            font.pixelSize: theme.fontBody
+                            color: theme.textFaint
                         }
                     }
 
@@ -133,94 +179,105 @@ Item {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
                         onClicked: {
-                            page.removeAllData = optionCard.modelData.removeAll
-                            page.modeSelected(optionCard.modelData.removeAll)
+                            page.removeAllData = optionSlot.modelData.removeAll
+                            page.modeSelected(optionSlot.modelData.removeAll)
                         }
                     }
                 }
             }
-        }
-        Item { Layout.preferredHeight: 14 }
 
-        // Data category table: plain Column + Repeater, to avoid a custom component with Row properties.
-        Rectangle {
-            id: tableColumn
-            Layout.fillWidth: true
-            implicitHeight: tableCol.implicitHeight + 20
-            Layout.preferredHeight: implicitHeight
-            radius: theme.radius
-            color: theme.panel
-            border.width: 1
-            border.color: theme.line
+            Item { width: 1; height: 16 }
 
-            Column {
-                id: tableCol
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.margins: 10
-                spacing: 0
+            // Category table: 40px header band, then 52px rows with a 1px #A6A6A6 @23% rule.
+            Rectangle {
+                width: parent.width
+                height: theme.tableHeadH
+                radius: theme.radiusCard
+                color: theme.tableHeadBg
+                border.width: 1
+                border.color: theme.tableHeadLine
 
-                Item {
-                    width: parent.width
-                    height: 26
-                    Text {
-                        width: parent.width * 0.68
-                        text: qsTr("Data")
-                        font.family: theme.fontFamily; font.pixelSize: theme.fontSmall
-                        font.bold: true; color: theme.muted
-                    }
-                    Text {
-                        x: parent.width * 0.68
-                        width: parent.width * 0.32
-                        text: page.removeAllData ? qsTr("Delete all") : qsTr("Default uninstall")
-                        font.family: theme.fontFamily; font.pixelSize: theme.fontSmall
-                        font.bold: true; color: theme.muted
-                    }
+                Text {
+                    x: 5
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("Data")
+                    font.family: theme.fontFamily
+                    font.pixelSize: theme.fontBody
+                    color: theme.tableHeadInk
                 }
+                Text {
+                    anchors.right: parent.right
+                    anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: page.removeAllData ? qsTr("Delete all") : qsTr("Default uninstall")
+                    font.family: theme.fontFamily
+                    font.pixelSize: theme.fontBody
+                    color: theme.tableHeadInk
+                }
+            }
 
-                Repeater {
-                    model: page.dataRows
-                    delegate: Item {
-                        id: rowItem
-                        required property var modelData
-                        width: tableCol.width
-                        height: 26
-                        Rectangle {
-                            width: parent.width; height: 1
-                            anchors.bottom: parent.bottom
-                            color: theme.lineSoft
-                        }
+            Repeater {
+                model: page.dataRows
+                delegate: Item {
+                    id: rowItem
+                    required property var modelData
+                    width: page.width
+                    height: theme.tableRowH
+
+                    Text {
+                        x: 2
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: rowItem.modelData.name
+                        elide: Text.ElideRight
+                        width: parent.width - 100
+                        font.family: theme.fontFamily
+                        font.pixelSize: theme.fontBody
+                        color: theme.rowInk
+                    }
+
+                    // Action pill (measured: 68x32 rx16; orange #FF8812 on 10%, grey #ECECEC).
+                    Rectangle {
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: theme.chipW
+                        height: theme.chipH
+                        radius: theme.chipRadius
+                        color: rowItem.modelData.isDelete ? theme.chipWarnBg : theme.chipNeutralBg
+
                         Text {
-                            width: parent.width * 0.68
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: rowItem.modelData.name
-                            font.family: theme.fontFamily; font.pixelSize: theme.fontSmall
-                            color: theme.text
-                        }
-                        Text {
-                            x: parent.width * 0.68
-                            width: parent.width * 0.32
-                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.fill: parent
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
                             text: rowItem.modelData.action
-                            font.family: theme.fontFamily; font.pixelSize: theme.fontSmall
-                            color: rowItem.modelData.isDelete ? theme.danger : theme.muted
+                            font.family: theme.fontFamily
+                            font.pixelSize: theme.fontBody
+                            color: rowItem.modelData.isDelete ? theme.chipWarnInk : theme.chipNeutralInk
                         }
+                    }
+
+                    // 1px #A6A6A6 @23% separator (measured on the 卸载 table).
+                    Rectangle {
+                        anchors.bottom: parent.bottom
+                        width: parent.width
+                        height: 1
+                        color: theme.divider
                     }
                 }
             }
-        }
 
-        Item { Layout.fillHeight: true }
+            Item { width: 1; height: 20 }
 
-        // Action row pinned to the bottom (design mockup .setup-actions { margin-top:auto; padding-top:22px })
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.topMargin: 22
-            spacing: theme.btnGap
-            Item { Layout.fillWidth: true }
-            UiBtn { text: qsTr("Cancel"); onClicked: page.cancelRequested() }
-            UiBtn { text: qsTr("Next"); primary: true; chevron: "right"; onClicked: page.nextRequested() }
+            // Action row scrolls with the body: the frame has no footer - the table runs past the
+            // bottom edge instead.
+            RowLayout {
+                width: parent.width
+                height: 44
+                spacing: theme.btnGap
+                UiBtn { text: qsTr("Cancel"); onClicked: page.cancelRequested() }
+                Item { Layout.fillWidth: true }
+                UiBtn { text: qsTr("Next"); primary: true; chevron: "right"; onClicked: page.nextRequested() }
+            }
+            Item { width: 1; height: 20 }
         }
     }
 }

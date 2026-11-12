@@ -11,6 +11,7 @@
 
   bundle.zip contents:
     ui/        dist/ from build-setup.ps1 (shell exe + Qt runtime + qml/ + qt.conf)
+    ui/version.txt          full payload version (the 4-byte trailer field truncates it)
     payload/installer.exe   QIFW installer package
 
   At runtime the launcher extracts to %TEMP%\OrbbecSlicerSetup\<hash>\ and then runs
@@ -103,6 +104,11 @@ $uninstStage = Join-Path $work 'uninstaller'
 New-Item -ItemType Directory -Force -Path $uiStage, $payloadStage | Out-Null
 try {
     Copy-Item -Path (Join-Path $UiDir '*') -Destination $uiStage -Recurse -Force
+    # The trailer index only stores 4 bytes of the version ("0.4.0-beta.1" -> "0.4."), which made the
+    # maintenance screen read a same-version re-install as a downgrade. Ship the full version with the
+    # UI so SetupHost can use it and only fall back to the trailer for older packages.
+    [System.IO.File]::WriteAllText((Join-Path $uiStage 'version.txt'), $Version,
+        (New-Object System.Text.UTF8Encoding($false)))
     Copy-Item -LiteralPath $InstallerExe -Destination (Join-Path $payloadStage 'installer.exe') -Force
 
     $tarItems = @('ui', 'payload')

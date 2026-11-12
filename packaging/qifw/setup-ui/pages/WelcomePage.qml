@@ -18,9 +18,10 @@ Item {
     Column {
         id: headline
         anchors.horizontalCenter: parent.horizontalCenter
-        // Design: the block sits a few pixels below the optical centre of the content column.
+        // Design: the block is optically centred in the content column (measured ink 235..258 and
+        // 281..309). The content column starts at y=36, so the centre offset is negative.
         anchors.verticalCenter: parent.verticalCenter
-        anchors.verticalCenterOffset: 4
+        anchors.verticalCenterOffset: -8
         width: parent.width
         spacing: 12
 
@@ -30,7 +31,7 @@ Item {
             wrapMode: Text.WordWrap
             font.family: theme.fontFamily
             font.pixelSize: theme.fontWelcome
-            font.weight: Font.Bold
+            font.weight: theme.fontTitleWeight
             color: theme.brand
         }
 
@@ -40,7 +41,7 @@ Item {
             wrapMode: Text.WordWrap
             font.family: theme.fontFamily
             font.pixelSize: theme.fontHero
-            font.weight: Font.Bold
+            font.weight: theme.fontTitleWeight
             color: theme.brand
         }
     }

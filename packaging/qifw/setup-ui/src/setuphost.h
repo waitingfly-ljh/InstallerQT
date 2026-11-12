@@ -80,6 +80,8 @@ signals:
 private:
     // Read the data area index at our own tail; use it if found, otherwise it is development mode (needs --payload).
     void locatePayload();
+    // Full payload version shipped inside the bundle (ui/version.txt); empty for packages built before it existed.
+    QString bundledPayloadVersion() const;
     void releasePayloadFromSelf();
     void schedulePayloadCleanup();
 

@@ -50,7 +50,25 @@ ApplicationWindow {
     UiBtn { text: qsTr("Disabled"); enabledState: false }
     UiCheck { text: qsTr("Checked"); checked: true }
     UiCheck { text: qsTr("Unchecked"); checked: false }
+    UiRadio { text: qsTr("Radio checked"); checked: true }
+    UiRadio { text: qsTr("Radio compact"); compact: true }
+    UiField {
+        width: 220
+        Text {
+            anchors.fill: parent
+            verticalAlignment: Text.AlignVCenter
+            text: qsTr("Field value")
+            font.family: theme.fontFamily
+            font.pixelSize: theme.fontBody
+        }
+    }
+    UiSelect { width: 220; model: [qsTr("One"), qsTr("Two")]; currentIndex: 0; text: qsTr("One") }
     BrandMark { base: theme.brand; accent: theme.brandSoft }
+    // Skeleton B: no step list, so the code+retry layout is constructed too.
+    ErrorDialog {
+        message: qsTr("Component check")
+        code: "5"
+    }
     ErrorDialog {
         steps: [{ "label": qsTr("One"), "state": "done" }, { "label": qsTr("Two"), "state": "failed" },
                 { "label": qsTr("Three"), "state": "pending" }]

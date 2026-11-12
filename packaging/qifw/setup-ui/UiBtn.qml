@@ -3,10 +3,10 @@ import QtQuick
 import QtQuick.Layouts
 import SetupUi
 
-// Generic button for the 11-11 design: 124x44, radius 8, 14px Medium label.
+// Generic button for the 11-11 design: 124x44, radius 8, 13px Medium label (ink 13.0 measured).
 //   primary  filled brand teal, white label (下一步 / 安装 / 开始升级 / 重试)
 //   default  #fbfbfb fill with a 1px #ececec border, dark label (取消 / 上一步)
-//   danger   filled red (not used by the 11-11 screens, kept for the smoke component check)
+//   danger   filled red (确认卸载 / the error dialog's 重试)
 // Disabled: solid #cccccc fill with a light #eeeeee label (design: "确认并降级" / the license
 // "下一步" before the agreement is accepted), not a dimmed copy of the enabled style.
 // chevron: "left" / "right" draws the design's ‹ / › next to the label ("上一步" / "下一步").
@@ -23,12 +23,12 @@ Rectangle {
     property bool danger: false
     property bool enabledState: true
     property string chevron: ""
-    // Dialog buttons hug their label (padding 32 per side, measured: the 取消 button in the failure
+    // Dialog buttons hug their label (minimum 92px, measured: the 取消 button in the failure
     // dialog is 92px wide while the same label is 124px wide on the wizard pages).
     property bool hug: false
     signal clicked()
 
-    implicitWidth: hug ? content.implicitWidth + 64 : Math.max(theme.btnW, content.implicitWidth + 32)
+    implicitWidth: hug ? Math.max(theme.btnHugW, content.implicitWidth + 64) : Math.max(theme.btnW, content.implicitWidth + 32)
     implicitHeight: theme.btnH
     // A layout must never shrink a button below its designed size: without this the layout may
     // hand the button less than 124px, and since the label is centred and not clipped, the text
@@ -65,7 +65,7 @@ Rectangle {
             verticalAlignment: Text.AlignVCenter
             text: "‹"
             font.family: theme.fontFamily
-            font.pixelSize: theme.fontButton + 6
+            font.pixelSize: theme.fontChevron
             color: b.ink
         }
         Text {
@@ -85,7 +85,7 @@ Rectangle {
             verticalAlignment: Text.AlignVCenter
             text: "›"
             font.family: theme.fontFamily
-            font.pixelSize: theme.fontButton + 6
+            font.pixelSize: theme.fontChevron
             color: b.ink
         }
     }

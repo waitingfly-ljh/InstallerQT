@@ -14,12 +14,19 @@
 
 .EXAMPLE
   powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\capture-ui.ps1 -Models 'options|failure'
+
+.EXAMPLE
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\capture-ui.ps1 -SkipBuild -Scale 1.25
+  # Writes 1200x675 captures to out/ui-shots/scale-125/ for the DPI check.
 #>
 param(
-    [string]$Models = 'welcome|license|options|maintenance|snapshot|rollback|progress|complete|failure|uninstall-scope|uninstall-confirm|uninstall-done|option-shortcutDesktop|option-assoc3mf|option-assocStl|option-launchAfterInstall',
+    [string]$Models = 'welcome|license|options|maintenance|snapshot|rollback|progress|complete|failure|failure-code|uninstall-scope|uninstall-confirm|uninstall-done|option-shortcutDesktop|option-assoc3mf|option-assocStl|option-launchAfterInstall',
     # UI language for the captures (e.g. zh_CN). Empty keeps the default (English / system locale).
     # Captures are written as <view>-<shortlang>.png so they can be compared side by side with the English set.
     [string]$Lang = '',
+    # Device pixel ratio for the capture: 1 (default, matches the 1x design), 1.25, 1.5 ...
+    # Values other than 1 write to out/ui-shots/scale-<pct>/ so the 1x set stays untouched.
+    [string]$Scale = '1',
     [switch]$SkipBuild
 )
 
@@ -28,7 +35,9 @@ $Here = Split-Path -Parent $PSScriptRoot
 $QtRoot = Join-Path $Here '..\toolchain\qt\6.8.3\msvc2022_64'
 $QtBin = Join-Path $QtRoot 'bin'
 $BuildDir = Join-Path $Here 'build-shot'
-$ShotDir = Join-Path $Here 'out\ui-shots'
+$scaleValue = [double]::Parse($Scale, [System.Globalization.CultureInfo]::InvariantCulture)
+$ShotDir = if ([Math]::Abs($scaleValue - 1.0) -lt 0.001) { Join-Path $Here 'out\ui-shots' }
+           else { Join-Path $Here ('out\ui-shots\scale-' + [int][Math]::Round($scaleValue * 100)) }
 $VcVars = 'C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat'
 $ShellLog = Join-Path $env:LOCALAPPDATA 'Orbbec\OrbbecSlicerSetup\logs\setup-shell.log'
 $Exe = Join-Path $BuildDir 'OrbbecSlicerSetup.exe'
@@ -36,7 +45,7 @@ $Exe = Join-Path $BuildDir 'OrbbecSlicerSetup.exe'
 if (-not (Test-Path -LiteralPath $QtBin)) { throw "Qt not found: $QtBin" }
 
 # View names = SetupController.view names; the three uninstall screens use their own names (main.cpp shotModelFor maps them to dataScope/confirm/uninstalled).
-$Views = @('welcome', 'license', 'options', 'maintenance', 'snapshot', 'rollback', 'progress', 'complete', 'failure',
+$Views = @('welcome', 'license', 'options', 'maintenance', 'snapshot', 'rollback', 'progress', 'complete', 'failure', 'failure-code',
            'uninstall-scope', 'uninstall-confirm', 'uninstall-done')
 $OptionKeys = @('shortcutDesktop', 'assoc3mf', 'assocStl', 'launchAfterInstall')
 
@@ -133,12 +142,13 @@ if (-not (Test-Path -LiteralPath $Exe)) { throw "Screenshot exe not found: $Exe"
 
 # --- 2. Capture screenshots view by view ---------------------------------------------------------
 # Screenshots need real rendering (the offscreen platform produces no image), so use the Qt Quick software rendering backend to avoid depending on the GPU.
-# Fix DPI to 96 and scale factor to 1: the machine is at 125% scaling, so Windows rasterizes the window at 1.25x and
-# the screenshot becomes 1200x675; the 11-11 design is 1x 960x540, so both must be fixed for a pixel-by-pixel comparison.
 New-Item -ItemType Directory -Force -Path $ShotDir | Out-Null
 $env:QT_QUICK_BACKEND = 'software'
-$env:QT_ENABLE_HIGHDPI_SCALING = '0'
-$env:QT_SCALE_FACTOR = '1'
+# Scale 1 fixes DPI to 96 so the window rasterizes at exactly 960x540 (1 DIP = 1 px, matching the design).
+# A higher -Scale enables Qt's own scaling and keeps device pixel ratio in step, so the capture becomes
+# 960*S x 540*S and every element must scale by exactly S (no new clipping or overlap).
+$env:QT_ENABLE_HIGHDPI_SCALING = if ([Math]::Abs($scaleValue - 1.0) -lt 0.001) { '0' } else { '1' }
+$env:QT_SCALE_FACTOR = $Scale.ToString([System.Globalization.CultureInfo]::InvariantCulture)
 $env:QT_FONT_DPI = '96'
 $env:PATH = "$BuildDir;$QtBin;$env:PATH"
 $env:ORBBEC_SETUP_SHOT_DIR = $ShotDir.TrimEnd('\')

@@ -38,7 +38,9 @@ ApplicationWindow {
     maximumHeight: theme.windowMinH
     title: qsTr("OrbbecSlicer Setup Wizard")
     flags: Qt.Window | Qt.FramelessWindowHint
-    color: theme.page
+    // Transparent window: AppFrame clips the shell to the design's 16px rounded corners, so the
+    // pixels outside that shape must stay transparent instead of showing a square window color.
+    color: "transparent"
 
     onClosing: (close) => {
         // Closing is not allowed while installing/uninstalling: let the engine finish or cancel it.
@@ -183,6 +185,9 @@ ApplicationWindow {
                     description: ctl.removeAllData
                                ? qsTr("Program files have been removed; local application data was purged.")
                                : qsTr("Program files have been removed; personal presets and preferences were retained.")
+                    // 80px tinted note under the description (design: 卸载完成 card at 313..392).
+                    cardTitle: qsTr("Sensitive credentials cleared")
+                    cardBody: qsTr("Login tokens, cloud service credentials and LAN access codes have been removed from this machine.")
                     primaryText: qsTr("Finish")
                     secondaryText: qsTr("View files")
                     showSecondary: ctl.keepDataDir

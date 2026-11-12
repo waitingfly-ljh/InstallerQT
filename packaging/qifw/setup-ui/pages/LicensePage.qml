@@ -37,11 +37,11 @@ Item {
             wrapMode: Text.WordWrap
             font.family: theme.fontFamily
             font.pixelSize: theme.fontTitle
-            font.weight: Font.Bold
+            font.weight: theme.fontTitleWeight
             color: theme.brand
         }
-        Item { Layout.preferredHeight: 30 }
-
+        // Design: title ink 41..64, lead ink 86..99, card 116..421 (page y: 5 / 50 / 80).
+        Item { Layout.preferredHeight: 18 }
         Text {
             Layout.fillWidth: true
             text: qsTr("Please read the license terms; you must accept them to continue.")
@@ -53,22 +53,22 @@ Item {
             font.pixelSize: theme.fontBody
             color: theme.textBody
         }
-        Item { Layout.preferredHeight: 4 }
+        Item { Layout.preferredHeight: 7 }
 
-        // Agreement card (design: #eeeeee, 12px radius). The heading and the divider run edge to edge,
-        // the scrollable body keeps the 20px inner padding.
+        // Agreement card (design: #EEEEEE, rx12, 442x305). The heading and the divider run edge to
+        // edge, the scrollable body keeps the 20px inner padding.
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.minimumHeight: 180
-            radius: theme.radiusCard
+            radius: theme.radiusLicenseCard
             color: theme.cardAlt
             clip: true
 
             Text {
                 id: cardTitle
                 x: 20
-                y: 20
+                y: 22
                 width: parent.width - 40
                 text: qsTr("OrbbecSlicer End User License Agreement")
                 elide: Text.ElideRight
@@ -80,10 +80,10 @@ Item {
 
             Rectangle {
                 id: divider
-                y: 64
+                y: 65
                 width: parent.width
                 height: 1
-                color: theme.line
+                color: theme.hairline
             }
 
             Flickable {
@@ -111,9 +111,10 @@ Item {
                     text: page.eulaBody
                     wrapMode: Text.Wrap
                     textFormat: Text.PlainText
-                    lineHeight: 1.55
+                    // Measured: em≈14 with a 23px baseline pitch (lineHeight 23/14).
+                    lineHeight: 1.64
                     font.family: theme.fontFamily
-                    font.pixelSize: theme.fontBody
+                    font.pixelSize: theme.fontLabel
                     color: theme.textBody
                 }
             }
@@ -178,7 +179,7 @@ Item {
             onToggled: page.acceptToggled(!page.accepted)
         }
 
-        Item { Layout.preferredHeight: 21 }
+        Item { Layout.preferredHeight: 16 }
 
         RowLayout {
             Layout.fillWidth: true

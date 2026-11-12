@@ -149,6 +149,9 @@ SetupEngine::SetupEngine(Environment *env, QObject *parent) : QObject(parent), m
     m_logPath = makeLogPath();
     // Snapshots are listed by the maintenance page (restore entry) and by the snapshot page (name clash); read them once at startup.
     refreshSnapshots();
+    // A previously installed copy must stay uninstallable even if the uninstall entry was cleaned
+    // up behind our back (enterprise AV/cleanup agents, manual registry hygiene).
+    repairUninstallRegistration();
 }
 
 SetupEngine::~SetupEngine()
@@ -994,40 +997,108 @@ void SetupEngine::revertInstallOptions()
     appendLog(QStringLiteral("Restored .3mf/.stl file associations"));
 }
 
+void SetupEngine::repairUninstallRegistration()
+{
+    // Runs at startup for an existing installation. Some enterprise cleanup agents remove the
+    // Programs-and-Features entry (and the deployed uninstaller) shortly after a successful
+    // install; without this the app can never be uninstalled from the system UI.
+    QSettings marker(QStringLiteral("HKEY_CURRENT_USER\\Software\\Orbbec\\OrbbecSlicer"),
+                     QSettings::NativeFormat);
+    const QString installDir = QDir::toNativeSeparators(marker.value(QStringLiteral("InstallDir")).toString());
+    if (installDir.isEmpty())
+        return;
+    const QString maintenancetool = QDir(installDir).filePath(QStringLiteral("maintenancetool.exe"));
+    if (!QFileInfo::exists(maintenancetool))
+        return;
+
+    QString keyPath = marker.value(QStringLiteral("UninstallKey")).toString();
+    if (!keyPath.isEmpty()
+        && QSettings(keyPath, QSettings::NativeFormat).contains(QStringLiteral("UninstallString")))
+        return; // Registration is intact, nothing to do.
+
+    const QString deployed = marker.value(QStringLiteral("Uninstaller")).toString();
+    const bool haveDeployed = !deployed.isEmpty() && QFileInfo::exists(deployed);
+
+    if (keyPath.isEmpty()) {
+        keyPath = QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{%1}")
+                      .arg(QUuid::createUuid().toString(QUuid::WithoutBraces).toUpper());
+        marker.setValue(QStringLiteral("UninstallKey"), keyPath);
+    }
+    if (haveDeployed)
+        marker.setValue(QStringLiteral("Uninstaller"), QDir::toNativeSeparators(deployed));
+
+    const QString uninstallString =
+        haveDeployed ? QStringLiteral("\"%1\" --uninstall --install-dir \"%2\"")
+                           .arg(QDir::toNativeSeparators(deployed), installDir)
+                     : QStringLiteral("\"%1\" --start-uninstaller")
+                           .arg(QDir::toNativeSeparators(maintenancetool));
+    QString version = marker.value(QStringLiteral("Version")).toString();
+    if (version.isEmpty() && m_env)
+        version = m_env->installedVersionFromDir(installDir);
+
+    QSettings entry(keyPath, QSettings::NativeFormat);
+    entry.setValue(QStringLiteral("DisplayName"), QStringLiteral("OrbbecSlicer"));
+    entry.setValue(QStringLiteral("Publisher"), QStringLiteral("Orbbec"));
+    if (!version.isEmpty())
+        entry.setValue(QStringLiteral("DisplayVersion"), version);
+    entry.setValue(QStringLiteral("InstallLocation"), installDir);
+    entry.setValue(QStringLiteral("UninstallString"), uninstallString);
+    entry.setValue(QStringLiteral("DisplayIcon"), haveDeployed ? QDir::toNativeSeparators(deployed)
+                                                              : QDir::toNativeSeparators(maintenancetool));
+    entry.setValue(QStringLiteral("NoModify"), 1);
+    entry.setValue(QStringLiteral("NoRepair"), 1);
+    entry.sync();
+    marker.sync();
+    appendLog(QStringLiteral("Restored missing uninstall registration: %1").arg(keyPath));
+}
+
 void SetupEngine::installUninstaller()
 {
     // After a successful install/maintenance: deploy the self-contained uninstaller to the user directory and point the system uninstall entry to it.
     // QIFW's maintenancetool.exe stays in the install directory for maintenance/update but is no longer a user-visible entry.
     const QString installDir = QDir::toNativeSeparators(m_installDir);
-    if (m_uninstallerSource.isEmpty() || !QFileInfo::exists(m_uninstallerSource)) {
-        appendLog(QStringLiteral("No uninstaller source file provided, skipping uninstall entry deployment"));
-        return;
-    }
-    // Test hook: the packaging loop redirects the data root under out/, to avoid touching real local user data.
+    const QString maintenancetool = QDir(m_installDir).filePath(QStringLiteral("maintenancetool.exe"));
+    bool haveDeployed = false;
+    QString dest;
     const QString dataRoot = qEnvironmentVariable("ORBBEC_SETUP_DATA_ROOT");
     const QString local = dataRoot.isEmpty() ? qEnvironmentVariable("LOCALAPPDATA")
                                              : QDir(dataRoot).filePath(QStringLiteral("Local"));
-    if (local.isEmpty()) {
-        appendLog(QStringLiteral("LOCALAPPDATA is empty, skipping uninstall entry deployment"));
+    if (m_uninstallerSource.isEmpty() || !QFileInfo::exists(m_uninstallerSource)) {
+        // No self-contained uninstaller bundled: still register an entry that works, using the
+        // maintenance tool QIFW just wrote, instead of leaving the app with no uninstall entry.
+        appendLog(QStringLiteral("No uninstaller source file provided, using the maintenance tool for the uninstall entry"));
+    } else if (local.isEmpty()) {
+        appendLog(QStringLiteral("LOCALAPPDATA is empty, using the maintenance tool for the uninstall entry"));
+    } else {
+        const QString dir = QDir(local).filePath(QStringLiteral("Orbbec/OrbbecSlicer/uninstaller"));
+        QDir().mkpath(dir);
+        dest = QDir::toNativeSeparators(QDir(dir).filePath(QStringLiteral("OrbbecSlicerUninstaller.exe")));
+        bool copied = false;
+        if (QFileInfo::exists(dest) && !QFile::remove(dest)) {
+            appendLog(QStringLiteral("Cannot overwrite old uninstaller: %1").arg(QDir::toNativeSeparators(dest)));
+        } else if (!QFile::copy(m_uninstallerSource, dest)) {
+            appendLog(QStringLiteral("Failed to copy uninstaller: %1 → %2").arg(QDir::toNativeSeparators(m_uninstallerSource),
+                                                              QDir::toNativeSeparators(dest)));
+        } else {
+            copied = true;
+        }
+        if (copied) {
+            haveDeployed = true;
+            m_uninstallerDeployed = dest;
+        } else {
+            dest.clear();
+        }
+    }
+    if (!haveDeployed && !QFileInfo::exists(maintenancetool)) {
+        appendLog(QStringLiteral("Neither the uninstaller nor the maintenance tool exists, skipping the uninstall entry"));
         return;
     }
-    const QString dir = QDir(local).filePath(QStringLiteral("Orbbec/OrbbecSlicer/uninstaller"));
-    QDir().mkpath(dir);
-    const QString dest = QDir::toNativeSeparators(
-        QDir(dir).filePath(QStringLiteral("OrbbecSlicerUninstaller.exe")));
-    if (QFileInfo::exists(dest) && !QFile::remove(dest)) {
-        appendLog(QStringLiteral("Cannot overwrite old uninstaller: %1").arg(QDir::toNativeSeparators(dest)));
-        return;
-    }
-    if (!QFile::copy(m_uninstallerSource, dest)) {
-        appendLog(QStringLiteral("Failed to copy uninstaller: %1 → %2").arg(QDir::toNativeSeparators(m_uninstallerSource),
-                                                          QDir::toNativeSeparators(dest)));
-        return;
-    }
-    m_uninstallerDeployed = QDir::toNativeSeparators(dest);
 
-    const QString uninstallString = QStringLiteral("\"%1\" --uninstall --install-dir \"%2\"")
-                                        .arg(dest, installDir);
+    const QString uninstallerTarget =
+        haveDeployed ? dest : QDir::toNativeSeparators(maintenancetool);
+    const QString uninstallString =
+        haveDeployed ? QStringLiteral("\"%1\" --uninstall --install-dir \"%2\"").arg(uninstallerTarget, installDir)
+                     : QStringLiteral("\"%1\" --start-uninstaller").arg(uninstallerTarget);
     const QString quietString = uninstallString + QStringLiteral(" --silent");
 
     // Find the QIFW-generated uninstall registration (matched by DisplayName + InstallLocation).
@@ -1087,12 +1158,16 @@ void SetupEngine::installUninstaller()
         entry.setValue(QStringLiteral("DisplayName"), QStringLiteral("OrbbecSlicer"));
     if (entry.value(QStringLiteral("Publisher")).toString().isEmpty())
         entry.setValue(QStringLiteral("Publisher"), QStringLiteral("Orbbec"));
-    if (entry.value(QStringLiteral("DisplayVersion")).toString().isEmpty())
-        entry.setValue(QStringLiteral("DisplayVersion"), QStringLiteral(ORBBEC_SETUP_VERSION));
+    // The product version is the one QIFW just installed (components.xml), not the shell's own
+    // version; Programs and Features must show the version the maintenance screen compares against.
+    QString productVersion = m_env ? m_env->installedVersionFromDir(m_installDir) : QString();
+    if (productVersion.isEmpty())
+        productVersion = QStringLiteral(ORBBEC_SETUP_VERSION);
+    entry.setValue(QStringLiteral("DisplayVersion"), productVersion);
     entry.setValue(QStringLiteral("InstallLocation"), installDir);
     entry.setValue(QStringLiteral("UninstallString"), uninstallString);
     entry.setValue(QStringLiteral("QuietUninstallString"), quietString);
-    entry.setValue(QStringLiteral("DisplayIcon"), dest);
+    entry.setValue(QStringLiteral("DisplayIcon"), uninstallerTarget);
     entry.setValue(QStringLiteral("EstimatedSize"), static_cast<int>(qMin<qint64>(installBytes / 1024, INT_MAX)));
     entry.setValue(QStringLiteral("NoModify"), 1);
     entry.setValue(QStringLiteral("NoRepair"), 1);
@@ -1102,17 +1177,24 @@ void SetupEngine::installUninstaller()
 
     QSettings marker(QStringLiteral("HKEY_CURRENT_USER\\Software\\Orbbec\\OrbbecSlicer"),
                      QSettings::NativeFormat);
-    marker.setValue(QStringLiteral("Uninstaller"), dest);
+    // Cache the installed version for readInstalled() (it also reads components.xml, this is the fast path).
+    marker.setValue(QStringLiteral("Version"), productVersion);
+    if (haveDeployed)
+        marker.setValue(QStringLiteral("Uninstaller"), dest);
+    else
+        marker.remove(QStringLiteral("Uninstaller"));
     marker.setValue(QStringLiteral("UninstallKey"), m_selfUninstallKey);
     marker.sync();
 
     const QString programs = QStandardPaths::writableLocation(QStandardPaths::ApplicationsLocation);
     const QString lnk = QDir(QDir(programs).filePath(QStringLiteral("OrbbecSlicer")))
                             .filePath(QStringLiteral("Uninstall OrbbecSlicer.lnk"));
-    const QString args = QStringLiteral("--uninstall --install-dir \"%1\"").arg(installDir);
-    const bool shortOk = createShellLink(lnk, dest, args, installDir);
+    const QString args = haveDeployed
+                             ? QStringLiteral("--uninstall --install-dir \"%1\"").arg(installDir)
+                             : QStringLiteral("--start-uninstaller");
+    const bool shortOk = createShellLink(lnk, uninstallerTarget, args, installDir);
     appendLog(QStringLiteral("Uninstall entry: %1 (shortcut %2)")
-                  .arg(QDir::toNativeSeparators(dest), shortOk ? QStringLiteral("created") : QStringLiteral("creation failed")));
+                  .arg(QDir::toNativeSeparators(uninstallerTarget), shortOk ? QStringLiteral("created") : QStringLiteral("creation failed")));
 }
 
 void SetupEngine::removeUninstallerRegistration()

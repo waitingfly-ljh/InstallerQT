@@ -24,28 +24,46 @@
         <translation>正在校验安装包完整性...</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Complete</source>
-        <translation>完成</translation>
+        <translation type="vanished">完成</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Ready</source>
-        <translation>已就绪</translation>
+        <translation type="vanished">已就绪</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="+1"/>
         <source>Launch now</source>
         <translation>立即启动</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+8"/>
+        <location line="+11"/>
         <source>View files</source>
         <translation>查看文件</translation>
     </message>
     <message>
-        <location line="+24"/>
+        <location line="-11"/>
+        <source>Installation complete</source>
+        <translation>安装完成</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>OrbbecSlicer is ready.</source>
+        <translation>OrbbecSlicer 已就绪。</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Sensitive credentials cleared</source>
+        <translation>敏感凭据已清除</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Login tokens, cloud service credentials and LAN access codes have been removed from this machine.</source>
+        <translation>登录令牌、云服务凭据和 LAN 访问码已从本机移除。</translation>
+    </message>
+    <message>
+        <location line="+26"/>
         <source>Installation failed</source>
         <translation>安装失败</translation>
     </message>
@@ -59,7 +77,7 @@
         <translation type="vanished">写入文件时权限不足</translation>
     </message>
     <message>
-        <location line="-30"/>
+        <location line="-33"/>
         <source>Uninstall complete</source>
         <translation>卸载完成</translation>
     </message>
@@ -69,7 +87,7 @@
         <translation>程序文件已移除；个人预设与偏好设置已保留。</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+4"/>
         <source>Finish</source>
         <translation>完成</translation>
     </message>
@@ -77,8 +95,8 @@
 <context>
     <name>AppFrame</name>
     <message>
-        <location filename="../AppFrame.qml" line="+19"/>
-        <location filename="../src/main.cpp" line="+464"/>
+        <location filename="../AppFrame.qml" line="+21"/>
+        <location filename="../src/main.cpp" line="+476"/>
         <source>OrbbecSlicer Setup Wizard</source>
         <translation>OrbbecSlicer 安装向导</translation>
     </message>
@@ -96,7 +114,7 @@ take shape</source>
 <context>
     <name>CompletePage</name>
     <message>
-        <location filename="../pages/CompletePage.qml" line="+14"/>
+        <location filename="../pages/CompletePage.qml" line="+21"/>
         <source>Installation complete</source>
         <translation>安装完成</translation>
     </message>
@@ -110,11 +128,19 @@ take shape</source>
         <source>Launch now</source>
         <translation>立即启动</translation>
     </message>
+    <message>
+        <source>Sensitive credentials cleared</source>
+        <translation type="vanished">敏感凭据已清除</translation>
+    </message>
+    <message>
+        <source>Login tokens, cloud service credentials and LAN access codes have been removed from this machine.</source>
+        <translation type="vanished">登录令牌、云服务凭据和 LAN 访问码已从本机移除。</translation>
+    </message>
 </context>
 <context>
     <name>DataScopePage</name>
     <message>
-        <location filename="../pages/DataScopePage.qml" line="+21"/>
+        <location filename="../pages/DataScopePage.qml" line="+33"/>
         <location line="+7"/>
         <source>Custom presets, calibration results</source>
         <translation>自定义预设、校准结果</translation>
@@ -162,22 +188,22 @@ take shape</source>
         <translation>保留</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+28"/>
         <source>What should happen to personal data?</source>
         <translation>个人数据应如何处理？</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+15"/>
         <source>Choose the data scope for this machine.</source>
         <translation>选择本机的数据清理范围。</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="-38"/>
         <source>Keep personal data</source>
         <translation>保留个人数据</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Presets, calibration results, preferences and device info are kept; caches and login credentials are cleared.</source>
         <translation>预设、校准结果、偏好与设备信息将保留；缓存与登录凭据将被清除。</translation>
     </message>
@@ -187,17 +213,17 @@ take shape</source>
         <translation>删除本机全部应用数据</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Presets, calibration results, preferences and device info are deleted as well.</source>
         <translation>预设、校准结果、偏好与设备信息也将一并删除。</translation>
     </message>
     <message>
-        <location line="+97"/>
+        <location line="+148"/>
         <source>Data</source>
         <translation>数据</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+9"/>
         <source>Delete all</source>
         <translation>全部删除</translation>
     </message>
@@ -207,12 +233,17 @@ take shape</source>
         <translation>默认卸载</translation>
     </message>
     <message>
-        <location line="+46"/>
+        <location line="-162"/>
+        <source>Recommended</source>
+        <translation>推荐</translation>
+    </message>
+    <message>
+        <location line="+226"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Next</source>
         <translation>下一步</translation>
     </message>
@@ -220,7 +251,7 @@ take shape</source>
 <context>
     <name>Environment</name>
     <message>
-        <location filename="../src/environment.cpp" line="+60"/>
+        <location filename="../src/environment.cpp" line="+61"/>
         <source>Please specify an install location</source>
         <translation>请填写安装位置</translation>
     </message>
@@ -249,12 +280,12 @@ take shape</source>
 <context>
     <name>ErrorDialog</name>
     <message>
-        <location filename="../ErrorDialog.qml" line="+20"/>
+        <location filename="../ErrorDialog.qml" line="+28"/>
         <source>Installation failed</source>
         <translation>安装失败</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+13"/>
         <source>OK</source>
         <translation>正常</translation>
     </message>
@@ -269,17 +300,20 @@ take shape</source>
         <translation>待执行</translation>
     </message>
     <message>
-        <location line="+272"/>
+        <location line="+265"/>
+        <location line="+123"/>
         <source>Error code %1</source>
         <translation>错误码 %1</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="-101"/>
+        <location line="+112"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-105"/>
+        <location line="+111"/>
         <source>Retry</source>
         <translation>重试</translation>
     </message>
@@ -330,7 +364,7 @@ take shape</source>
 <context>
     <name>LicensePage</name>
     <message>
-        <location filename="../pages/LicensePage.qml" line="+24"/>
+        <location filename="../pages/LicensePage.qml" line="+23"/>
         <source>The license text could not be loaded. Please refer to the license file shipped with the installer.</source>
         <translation>许可协议内容加载失败，请查看安装包随附的许可文件。</translation>
     </message>
@@ -350,7 +384,7 @@ take shape</source>
         <translation>OrbbecSlicer 最终用户许可协议</translation>
     </message>
     <message>
-        <location line="+48"/>
+        <location line="+103"/>
         <source>I accept the license agreement</source>
         <translation>我已阅读并接受许可协议</translation>
     </message>
@@ -404,7 +438,7 @@ and no internet connection</source>
         <translation type="vanished">OrbbecSlicer %1</translation>
     </message>
     <message>
-        <location line="+53"/>
+        <location line="+61"/>
         <source>Installation was cancelled; written files have been removed.</source>
         <translation>安装已取消；已写入的文件已清除。</translation>
     </message>
@@ -508,6 +542,16 @@ and no internet connection</source>
         <translation>程序文件已移除；个人预设与偏好设置已保留。</translation>
     </message>
     <message>
+        <location line="+2"/>
+        <source>Sensitive credentials cleared</source>
+        <translation>敏感凭据已清除</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Login tokens, cloud service credentials and LAN access codes have been removed from this machine.</source>
+        <translation>登录令牌、云服务凭据和 LAN 访问码已从本机移除。</translation>
+    </message>
+    <message>
         <location line="+1"/>
         <source>Finish</source>
         <translation>完成</translation>
@@ -521,7 +565,7 @@ and no internet connection</source>
 <context>
     <name>MaintenancePage</name>
     <message>
-        <location filename="../pages/MaintenancePage.qml" line="+26"/>
+        <location filename="../pages/MaintenancePage.qml" line="+38"/>
         <source>Repair OrbbecSlicer</source>
         <translation>修复 OrbbecSlicer</translation>
     </message>
@@ -624,32 +668,32 @@ and no internet connection</source>
         <translation>局域网访问码</translation>
     </message>
     <message>
-        <location line="+54"/>
+        <location line="+66"/>
         <source>Current version</source>
         <translation>当前版本</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+11"/>
         <source>Unknown</source>
         <translation>未知</translation>
     </message>
     <message>
-        <location line="+36"/>
+        <location line="+55"/>
         <source>Installer version</source>
         <translation>安装包版本</translation>
     </message>
     <message>
-        <location line="+41"/>
+        <location line="+55"/>
         <source>The following data will be kept</source>
         <translation>以下数据将被保留</translation>
     </message>
     <message>
-        <location line="+61"/>
+        <location line="+76"/>
         <source>Downgrading may cause configuration incompatibility</source>
         <translation>降级可能导致配置不兼容</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+11"/>
         <source>A recoverable snapshot is created before installation. Configuration the old version cannot read is quarantined instead of being overwritten.</source>
         <translation>安装前会创建可恢复的快照；旧版本无法读取的配置将被隔离保留，而不会被覆盖。</translation>
     </message>
@@ -658,7 +702,7 @@ and no internet connection</source>
         <translation type="vanished">安装前会创建可恢复的快照。旧版本无法读取的配置将被隔离而不是覆盖。</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+12"/>
         <source>I understand the risk and want to install the older version</source>
         <translation>我了解风险，仍要安装旧版本</translation>
     </message>
@@ -668,7 +712,7 @@ and no internet connection</source>
         <translation>恢复快照</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+22"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
@@ -696,17 +740,17 @@ and no internet connection</source>
         <translation>确认安装位置和常用选项</translation>
     </message>
     <message>
-        <location line="+104"/>
+        <location line="+107"/>
         <source>About %1 of free space required</source>
         <translation>预计需要 %1 可用空间</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+27"/>
         <source>Launch after installation</source>
         <translation>安装完成后启动软件</translation>
     </message>
     <message>
-        <location line="+56"/>
+        <location line="+58"/>
         <source>Back</source>
         <translation>上一步</translation>
     </message>
@@ -719,7 +763,7 @@ and no internet connection</source>
         <translation type="vanished">选择安装位置与常用选项。应用将安装到所选文件夹下的 OrbbecSlicer 文件夹中。</translation>
     </message>
     <message>
-        <location line="-172"/>
+        <location line="-180"/>
         <source>Install location</source>
         <translation>安装位置</translation>
     </message>
@@ -732,7 +776,7 @@ and no internet connection</source>
         <translation type="vanished">安装到：%1</translation>
     </message>
     <message>
-        <location line="-34"/>
+        <location line="-35"/>
         <source>Only %1 left on this disk, %2 required.</source>
         <translation>此磁盘仅剩 %1，需要 %2。</translation>
     </message>
@@ -746,7 +790,7 @@ and no internet connection</source>
         <translation type="vanished">约需 %1 可用空间；当前可用 %2。</translation>
     </message>
     <message>
-        <location line="+145"/>
+        <location line="+152"/>
         <source>Create a desktop shortcut</source>
         <translation>创建桌面快捷方式</translation>
     </message>
@@ -765,7 +809,7 @@ and no internet connection</source>
         <translation type="vanished">安装完成后启动应用</translation>
     </message>
     <message>
-        <location line="+60"/>
+        <location line="+62"/>
         <source>Install</source>
         <translation>安装</translation>
     </message>
@@ -778,7 +822,7 @@ and no internet connection</source>
 <context>
     <name>ProgressPage</name>
     <message>
-        <location filename="../pages/ProgressPage.qml" line="+15"/>
+        <location filename="../pages/ProgressPage.qml" line="+25"/>
         <source>Installing OrbbecSlicer</source>
         <translation>正在安装 OrbbecSlicer</translation>
     </message>
@@ -788,7 +832,7 @@ and no internet connection</source>
         <translation>请保持此窗口打开。安装过程不会上传本地项目或用户预设。</translation>
     </message>
     <message>
-        <location line="+116"/>
+        <location line="+108"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
@@ -834,12 +878,29 @@ and no internet connection</source>
         <translation>未选中</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+1"/>
+        <source>Radio checked</source>
+        <translation>单选（选中）</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Radio compact</source>
+        <translation>单选（小号）</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Field value</source>
+        <translation>字段值</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <location line="+8"/>
         <source>One</source>
         <translation>一</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="-8"/>
+        <location line="+8"/>
         <source>Two</source>
         <translation>二</translation>
     </message>
@@ -849,7 +910,8 @@ and no internet connection</source>
         <translation>三</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-5"/>
+        <location line="+6"/>
         <location line="+5"/>
         <source>Component check</source>
         <translation>组件检查</translation>
@@ -863,7 +925,7 @@ and no internet connection</source>
 <context>
     <name>RollbackDialog</name>
     <message>
-        <location filename="../RollbackDialog.qml" line="+45"/>
+        <location filename="../RollbackDialog.qml" line="+46"/>
         <source>No snapshot available.</source>
         <translation>没有可用的快照。</translation>
     </message>
@@ -873,17 +935,17 @@ and no internet connection</source>
         <translation>配置将回滚到 %1（%2）。此时刻之后的更改将被清除，请谨慎操作。</translation>
     </message>
     <message>
-        <location line="+58"/>
+        <location line="+40"/>
         <source>Roll back data</source>
         <translation>回滚数据</translation>
     </message>
     <message>
-        <location line="+195"/>
+        <location line="+202"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+7"/>
         <source>Confirm</source>
         <translation>确定</translation>
     </message>
@@ -989,14 +1051,14 @@ and no internet connection</source>
     <name>SetupEngine</name>
     <message>
         <location filename="../src/setupengine.cpp" line="+89"/>
-        <location line="+581"/>
+        <location line="+587"/>
         <location line="+9"/>
         <location line="+6"/>
         <source>Writing program files</source>
         <translation>正在写入程序文件</translation>
     </message>
     <message>
-        <location line="-537"/>
+        <location line="-540"/>
         <source>A task is already in progress</source>
         <translation>已有任务正在进行</translation>
     </message>
@@ -1076,7 +1138,7 @@ and no internet connection</source>
         <translation>正在校验安装包负载</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+25"/>
         <source>Program files no longer exist, uninstall registration and user data cleaned</source>
         <translation>程序文件已不存在，卸载登记与用户数据已清理</translation>
     </message>
@@ -1160,7 +1222,7 @@ and no internet connection</source>
 <context>
     <name>SnapshotPage</name>
     <message>
-        <location filename="../pages/SnapshotPage.qml" line="+39"/>
+        <location filename="../pages/SnapshotPage.qml" line="+48"/>
         <source>Start repair</source>
         <translation>开始修复</translation>
     </message>
@@ -1175,37 +1237,31 @@ and no internet connection</source>
         <translation>确认并降级</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Program files</source>
-        <translation>程序文件</translation>
+        <translation type="vanished">程序文件</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Custom presets</source>
-        <translation>自定义预设</translation>
+        <translation type="vanished">自定义预设</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Software preferences</source>
-        <translation>软件偏好</translation>
+        <translation type="vanished">软件偏好</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Calibration results</source>
-        <translation>校准结果</translation>
+        <translation type="vanished">校准结果</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Printer info</source>
-        <translation>打印机信息</translation>
+        <translation type="vanished">打印机信息</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>LAN access code</source>
-        <translation>局域网访问码</translation>
+        <translation type="vanished">局域网访问码</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+5"/>
         <source>Please enter a snapshot name</source>
         <translation>请填写快照名称</translation>
     </message>
@@ -1220,67 +1276,85 @@ and no internet connection</source>
         <translation>需以字母开头，仅可包含字母、数字以及 - _ .（1-65 个字符）</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+22"/>
         <source>Create a snapshot</source>
         <translation>创建快照</translation>
     </message>
     <message>
-        <location line="+11"/>
         <source>The current program and your data are backed up first, so a failed %1 can be restored.</source>
-        <translation>将先备份当前程序与你的数据，%1失败时可恢复。</translation>
+        <translation type="vanished">将先备份当前程序与你的数据，%1失败时可恢复。</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>repair</source>
-        <translation>修复</translation>
+        <translation type="vanished">修复</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>upgrade</source>
-        <translation>升级</translation>
+        <translation type="vanished">升级</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>downgrade</source>
-        <translation>降级</translation>
+        <translation type="vanished">降级</translation>
     </message>
     <message>
-        <location line="+12"/>
         <source>Snapshot contents</source>
-        <translation>快照内容</translation>
+        <translation type="vanished">快照内容</translation>
+    </message>
+    <message>
+        <source>Backed up from version %1</source>
+        <translation type="vanished">备份自版本 %1</translation>
     </message>
     <message>
         <location line="+28"/>
-        <source>Backed up from version %1</source>
-        <translation>备份自版本 %1</translation>
-    </message>
-    <message>
-        <location line="+1"/>
         <source>Unknown</source>
         <translation>未知</translation>
     </message>
     <message>
-        <location line="+7"/>
         <source>It is restored on the maintenance screen if you need it.</source>
-        <translation>需要时可在维护页恢复。</translation>
+        <translation type="vanished">需要时可在维护页恢复。</translation>
     </message>
     <message>
-        <location line="+42"/>
+        <location line="+34"/>
         <source>Snapshot name</source>
         <translation>快照名称</translation>
     </message>
     <message>
-        <location line="+50"/>
+        <location line="+58"/>
         <source>Saved to %1 (about %2).</source>
         <translation>保存到 %1（约 %2）。</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+18"/>
         <source>Create a snapshot before installation</source>
         <translation>安装前创建快照</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="-121"/>
+        <source>Installed version</source>
+        <translation>已安装版本</translation>
+    </message>
+    <message>
+        <location line="+22"/>
+        <source>Install location</source>
+        <translation>安装位置</translation>
+    </message>
+    <message>
+        <location line="+63"/>
+        <source>For example: snapshot20200708</source>
+        <translation>例如：snapshot20200708</translation>
+    </message>
+    <message>
+        <location line="+53"/>
+        <source>Create</source>
+        <translation>创建</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Do not create</source>
+        <translation>不创建</translation>
+    </message>
+    <message>
+        <location line="+25"/>
         <source>Back</source>
         <translation>上一步</translation>
     </message>
@@ -1288,53 +1362,69 @@ and no internet connection</source>
 <context>
     <name>UninstallConfirmPage</name>
     <message>
-        <location filename="../pages/UninstallConfirmPage.qml" line="+21"/>
         <source>Program files will be removed and all OrbbecSlicer application data on this machine deleted: presets, calibration results, preferences, caches and credentials.</source>
-        <translation>将移除程序文件，并删除本机全部 OrbbecSlicer 应用数据：预设、校准结果、偏好、缓存与凭据。</translation>
+        <translation type="vanished">将移除程序文件，并删除本机全部 OrbbecSlicer 应用数据：预设、校准结果、偏好、缓存与凭据。</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Program files will be removed; custom presets, calibration results, preferences and non-sensitive device info are kept; caches and login credentials are cleared.</source>
-        <translation>将移除程序文件；自定义预设、校准结果、偏好与非敏感设备信息将保留；缓存与登录凭据将被清除。</translation>
+        <translation type="vanished">将移除程序文件；自定义预设、校准结果、偏好与非敏感设备信息将保留；缓存与登录凭据将被清除。</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source> Files inside the install directory are deleted too, so keep personal projects outside it.</source>
-        <translation>安装目录内的文件也会被删除，请将个人项目保存在该目录之外。</translation>
+        <translation type="vanished">安装目录内的文件也会被删除，请将个人项目保存在该目录之外。</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source> The user data folder created at install time is also kept.</source>
-        <translation>安装时创建的用户数据文件夹也将保留。</translation>
+        <translation type="vanished">安装时创建的用户数据文件夹也将保留。</translation>
     </message>
     <message>
-        <location line="+8"/>
-        <location line="+114"/>
+        <location filename="../pages/UninstallConfirmPage.qml" line="+45"/>
+        <location line="+60"/>
         <source>Confirm uninstall</source>
         <translation>确认卸载</translation>
     </message>
     <message>
-        <location line="-104"/>
+        <location line="-45"/>
         <source>Confirm the data scope.</source>
         <translation>确认数据范围。</translation>
     </message>
     <message>
-        <location line="+40"/>
+        <location line="+20"/>
         <source>Not affected</source>
         <translation>不受影响</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+1"/>
         <source>Projects and exported files outside the program directory, plus cloud data for the current account.</source>
         <translation>程序目录之外的项目与导出文件，以及当前账户的云端数据。</translation>
     </message>
     <message>
-        <location line="+32"/>
+        <location line="+9"/>
         <source>Keep the user data folder</source>
         <translation>保留用户数据文件夹</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="-62"/>
+        <source>Personal presets and preferences will be kept</source>
+        <translation>将保留个人预设与偏好</translation>
+    </message>
+    <message>
+        <location line="-1"/>
+        <source>Delete all application data on this machine</source>
+        <translation>删除本机全部应用数据</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Presets, calibration results, preferences and device info are deleted as well.</source>
+        <translation>预设、校准结果、偏好与设备信息也将一并删除。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Login tokens, cloud service credentials, LAN access codes and caches will be cleared.</source>
+        <translation>登录令牌、云服务凭据、LAN 访问码和缓存将被清除。</translation>
+    </message>
+    <message>
+        <location line="+71"/>
         <source>Back</source>
         <translation>返回</translation>
     </message>
@@ -1342,7 +1432,7 @@ and no internet connection</source>
 <context>
     <name>WelcomePage</name>
     <message>
-        <location filename="../pages/WelcomePage.qml" line="+29"/>
+        <location filename="../pages/WelcomePage.qml" line="+30"/>
         <source>Welcome</source>
         <translation>欢迎使用</translation>
     </message>

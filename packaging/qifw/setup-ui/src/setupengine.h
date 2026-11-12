@@ -97,6 +97,9 @@ private:
     void revertInstallOptions();
     // After a successful install/maintenance: deploy the branded uninstaller and rewrite the system uninstall registration and Start menu shortcut.
     void installUninstaller();
+    // Startup self-check: recreate the Programs-and-Features entry when the recorded registration
+    // is gone (external cleanup agents may drop it after a successful install).
+    void repairUninstallRegistration();
     // After uninstall completes: delete the Start menu shortcut, the self-created uninstall registration, and the Uninstaller value.
     void removeUninstallerRegistration();
     void cleanupUserDataIfRequested();

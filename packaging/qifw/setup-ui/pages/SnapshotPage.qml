@@ -6,12 +6,21 @@ import SetupUi
 
 // Pre-install snapshot screen (maintenance flows only: repair / upgrade / downgrade).
 //
-// The maintenance screens promise "a recoverable snapshot is created before installation", so this page is
-// the explicit step where the user names it and decides whether to take it. It follows the same content
-// grammar as the other wizard pages (24px brand title, 16px lead, 16px section labels, one 139px tinted
-// card, 34px field, action row pinned to the bottom) so it reads as part of the same design rather than a
-// new dialog style. The field/hint pair mirrors the reference rules for snapshot names: starts with a
-// letter, letters / digits / - _ . only, 1-65 characters.
+// The maintenance screens promise "a recoverable snapshot is created before installation", so this page
+// is the explicit step where the user names it and decides whether to take it.
+//
+// Geometry from the 创建快照 frame (measured; the content column starts at window y=36, so page y =
+// window y - 36):
+//   title ink   41..64                 -> page   5..28
+//   label       94..109                -> page  58..73
+//   43px field 123.5..166.5            -> page  87.5..130.5  (1px #f5f5f5 outline, rx9.5, 10px inset)
+//   label      181..196 / 268..283     -> page 145..160 / 232..247   (field pitch 87px)
+//   hint ink   349..365 (12px, #a5a5a5)-> page 313..329
+//   label      381..396                -> page 345..360
+//   radio row  410..435 (d25)          -> page 374..399
+//   button     476..519                -> page 440..483
+// The frame has one primary button and no footer navigation; "Back" is kept at the left as a
+// functional deviation (the page is only reachable from the maintenance screen).
 Item {
     id: page
     UiTheme { id: theme }
@@ -39,11 +48,6 @@ Item {
     readonly property string primaryText: mode === "repair" ? qsTr("Start repair")
                                         : mode === "upgrade" ? qsTr("Start upgrade")
                                         : qsTr("Confirm and downgrade")
-    // Snapshot contents (design: the maintenance page's "kept data" card uses the same 2x3 grid).
-    readonly property var contents: [
-        qsTr("Program files"), qsTr("Custom presets"), qsTr("Software preferences"),
-        qsTr("Calibration results"), qsTr("Printer info"), qsTr("LAN access code")
-    ]
 
     readonly property bool nameValid: Host.engine.isValidSnapshotName(page.snapshotName)
     readonly property bool nameTaken: page.nameValid && Host.engine.snapshots.some(s => s.name === page.snapshotName)
@@ -62,146 +66,103 @@ Item {
         return gb >= 1 ? gb.toFixed(1) + " GB" : Math.max(1, Math.round(n / (1024 * 1024))) + " MB"
     }
 
-    ColumnLayout {
-        anchors.fill: parent
+    Column {
+        width: parent.width
         spacing: 0
 
-        Text {
-            Layout.fillWidth: true
-            text: qsTr("Create a snapshot")
-            wrapMode: Text.WordWrap
-            font.family: theme.fontFamily
-            font.pixelSize: theme.fontTitle
-            font.weight: Font.Bold
-            color: theme.brand
-        }
-        Item { Layout.preferredHeight: 6 }
-
-        Text {
-            Layout.fillWidth: true
-            text: qsTr("The current program and your data are backed up first, so a failed %1 can be restored.")
-                      .arg(page.mode === "repair" ? qsTr("repair")
-                           : page.mode === "upgrade" ? qsTr("upgrade") : qsTr("downgrade"))
-            wrapMode: Text.WordWrap
-            lineHeight: 1.5
-            font.family: theme.fontFamily
-            font.pixelSize: theme.fontLead
-            color: theme.textBody
-        }
-
-        Item { Layout.preferredHeight: 18 }
-
-        // What the snapshot contains (same card grammar as the maintenance page's kept-data card).
-        Text {
-            text: qsTr("Snapshot contents")
-            font.family: theme.fontFamily
-            font.pixelSize: theme.fontSection
-            font.weight: Font.DemiBold
-            color: theme.text
-        }
-        Item { Layout.preferredHeight: 8 }
-
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 139
-            Layout.minimumHeight: 139
-            Layout.maximumHeight: 139
-            radius: theme.radiusCard
-            color: theme.cardBlue
-            border.width: 1
-            border.color: theme.cardBlueLine
-
-            Column {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.leftMargin: 16
-                anchors.rightMargin: 16
-                anchors.topMargin: 17
-                spacing: 6
-
-                Text {
-                    text: qsTr("Backed up from version %1").arg(page.currentVersion.length > 0
-                                                                ? page.currentVersion : qsTr("Unknown"))
-                    font.family: theme.fontFamily
-                    font.pixelSize: theme.fontSection
-                    font.weight: Font.DemiBold
-                    color: theme.text
-                }
-                Text {
-                    text: qsTr("It is restored on the maintenance screen if you need it.")
-                    font.family: theme.fontFamily
-                    font.pixelSize: theme.fontSmall
-                    color: theme.textBody
-                }
-
-                Grid {
-                    width: parent.width
-                    columns: 2
-                    columnSpacing: 0
-                    rowSpacing: 4
-                    Repeater {
-                        model: page.contents
-                        delegate: Row {
-                            required property string modelData
-                            width: 240
-                            height: 24
-                            spacing: 8
-                            Text {
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: "✓"
-                                font.family: theme.fontFamily
-                                font.pixelSize: theme.fontBody
-                                font.weight: Font.Bold
-                                color: theme.brand
-                            }
-                            Text {
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: modelData
-                                font.family: theme.fontFamily
-                                font.pixelSize: theme.fontBody
-                                color: theme.textBody
-                            }
-                        }
-                    }
-                }
+        Item {
+            width: parent.width
+            height: 24
+            Text {
+                anchors.fill: parent
+                verticalAlignment: Text.AlignVCenter
+                text: qsTr("Create a snapshot")
+                elide: Text.ElideRight
+                font.family: theme.fontFamily
+                font.pixelSize: theme.fontTitle
+                font.weight: theme.fontTitleWeight
+                color: theme.brand
             }
         }
 
-        Item { Layout.preferredHeight: 16 }
-
-        Text {
-            text: qsTr("Snapshot name")
-            font.family: theme.fontFamily
-            font.pixelSize: theme.fontSection
-            font.weight: Font.DemiBold
-            color: theme.snapshotEnabled ? theme.text : theme.mutedSoft
+        // --- Group 1: current version (read only) ---
+        Item { width: 1; height: 31 }
+        Item {
+            width: parent.width
+            height: 16
+            Text {
+                anchors.fill: parent
+                verticalAlignment: Text.AlignVCenter
+                text: qsTr("Installed version")
+                font.family: theme.fontFamily
+                font.pixelSize: theme.fontSection
+                font.weight: Font.DemiBold
+                color: theme.textStrong
+            }
         }
-        Item { Layout.preferredHeight: 8 }
+        Item { width: 1; height: 16.5 }
+        UiSelect {
+            width: parent.width
+            readOnly: true
+            text: page.currentVersion.length > 0 ? page.currentVersion : qsTr("Unknown")
+        }
 
-        // Name field: same 34px control as the install location field.
-        Rectangle {
-            Layout.fillWidth: true
-            implicitHeight: theme.fieldH
-            radius: theme.radiusField
-            color: page.snapshotEnabled ? theme.card : theme.panelSoft
-            border.width: 1
-            border.color: !page.snapshotEnabled ? theme.lineSoft
-                          : nameInput.activeFocus ? theme.brand : page.nameProblem.length > 0 ? theme.danger : theme.fieldLine
+        // --- Group 2: install location (read only) ---
+        Item { width: 1; height: 11.5 }
+        Item {
+            width: parent.width
+            height: 16
+            Text {
+                anchors.fill: parent
+                verticalAlignment: Text.AlignVCenter
+                text: qsTr("Install location")
+                font.family: theme.fontFamily
+                font.pixelSize: theme.fontSection
+                font.weight: Font.DemiBold
+                color: theme.textStrong
+            }
+        }
+        Item { width: 1; height: 16.5 }
+        UiSelect {
+            width: parent.width
+            readOnly: true
+            elideMode: Text.ElideMiddle
+            text: page.installDir
+        }
+
+        // --- Group 3: snapshot name ---
+        Item { width: 1; height: 11.5 }
+        Item {
+            width: parent.width
+            height: 16
+            Text {
+                anchors.fill: parent
+                verticalAlignment: Text.AlignVCenter
+                text: qsTr("Snapshot name")
+                font.family: theme.fontFamily
+                font.pixelSize: theme.fontSection
+                font.weight: Font.DemiBold
+                color: page.snapshotEnabled ? theme.textStrong : theme.mutedSoft
+            }
+        }
+        Item { width: 1; height: 16.5 }
+        UiField {
+            width: parent.width
+            focused: nameInput.activeFocus
+            disabled: !page.snapshotEnabled
+            danger: page.snapshotEnabled && page.nameProblem.length > 0
 
             TextInput {
                 id: nameInput
                 anchors.fill: parent
-                anchors.leftMargin: 12
-                anchors.rightMargin: 12
                 verticalAlignment: TextInput.AlignVCenter
                 selectByMouse: true
                 enabled: page.snapshotEnabled
                 font.family: theme.fontFamily
                 font.pixelSize: theme.fontBody
-                color: page.snapshotEnabled ? theme.text : theme.muted
+                color: page.snapshotEnabled ? theme.textStrong : theme.muted
                 selectionColor: theme.brandSoft
-                selectedTextColor: theme.text
+                selectedTextColor: theme.textStrong
                 clip: true
                 text: page.nameEditing ? text : page.snapshotName
                 onTextEdited: {
@@ -212,49 +173,97 @@ Item {
                     page.nameEditing = false
                     page.nameChanged(text)
                 }
+                // Placeholder copy (design: #b7b7b7, e.g. "snapshot202007083053").
+                Text {
+                    anchors.fill: parent
+                    verticalAlignment: Text.AlignVCenter
+                    visible: nameInput.text.length === 0
+                    text: qsTr("For example: snapshot20200708")
+                    font.family: theme.fontFamily
+                    font.pixelSize: theme.fontBody
+                    color: theme.textPlaceholder
+                }
             }
         }
 
-        Item { Layout.preferredHeight: 6 }
-
-        Text {
-            Layout.fillWidth: true
-            // Destination folder only: the name is already in the field above, and appending it makes the
-            // hint wrap onto three lines.
-            text: page.nameProblem.length > 0
-                  ? page.nameProblem
-                  : qsTr("Saved to %1 (about %2).")
-                        .arg(Host.engine.snapshotRoot)
-                        .arg(page.fmtBytes(page.estimateBytes))
-            wrapMode: Text.WordWrap
-            font.family: theme.fontFamily
-            font.pixelSize: theme.fontSmall
-            color: page.nameProblem.length > 0 ? theme.danger : theme.muted
-        }
-
-        Item { Layout.preferredHeight: 12 }
-
-        UiCheck {
-            text: qsTr("Create a snapshot before installation")
-            checked: page.snapshotEnabled
-            onToggled: {
-                page.enabledToggled(!page.snapshotEnabled)
+        // Hint line: name rules while the field is being edited, otherwise where the snapshot goes.
+        Item { width: 1; height: 6 }
+        Item {
+            width: parent.width
+            height: 16
+            Text {
+                anchors.fill: parent
+                verticalAlignment: Text.AlignVCenter
+                text: page.nameProblem.length > 0
+                      ? page.nameProblem
+                      : qsTr("Saved to %1 (about %2).")
+                            .arg(Host.engine.snapshotRoot)
+                            .arg(page.fmtBytes(page.estimateBytes))
+                elide: Text.ElideRight
+                font.family: theme.fontFamily
+                font.pixelSize: theme.fontHint
+                color: page.nameProblem.length > 0 ? theme.danger : theme.textFaint
             }
         }
 
-        Item { Layout.fillHeight: true }
-
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: theme.btnGap
-            Item { Layout.fillWidth: true }
-            UiBtn { text: qsTr("Back"); chevron: "left"; onClicked: page.backRequested() }
-            UiBtn {
-                text: page.primaryText
-                primary: true
-                enabledState: page.canProceed
-                onClicked: page.proceedRequested()
+        // --- Take it or not (design: 14px label + a d25 radio row) ---
+        Item { width: 1; height: 15 }
+        Item {
+            width: parent.width
+            height: 16
+            Text {
+                anchors.fill: parent
+                verticalAlignment: Text.AlignVCenter
+                text: qsTr("Create a snapshot before installation")
+                elide: Text.ElideRight
+                font.family: theme.fontFamily
+                font.pixelSize: theme.fontSection
+                font.weight: Font.DemiBold
+                color: theme.textStrong
             }
+        }
+        Item { width: 1; height: 16.5 }
+
+        Row {
+            width: parent.width
+            height: theme.radioSizeLg
+            spacing: 0
+
+            Repeater {
+                model: [
+                    { "enabled": true,  "label": qsTr("Create") },
+                    { "enabled": false, "label": qsTr("Do not create") }
+                ]
+                delegate: UiRadio {
+                    id: radioSlot
+                    required property var modelData
+                    width: 142
+                    height: theme.radioSizeLg
+                    compact: false
+                    text: radioSlot.modelData.label
+                    checked: page.snapshotEnabled === radioSlot.modelData.enabled
+                    onToggled: {
+                        if (page.snapshotEnabled !== radioSlot.modelData.enabled)
+                            page.enabledToggled(radioSlot.modelData.enabled)
+                    }
+                }
+            }
+        }
+    }
+
+    // Action row: the frame has a single 124x44 button at 816..939 with no footer navigation.
+    RowLayout {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        spacing: theme.btnGap
+        UiBtn { text: qsTr("Back"); chevron: "left"; onClicked: page.backRequested() }
+        Item { Layout.fillWidth: true }
+        UiBtn {
+            text: page.primaryText
+            primary: true
+            enabledState: page.canProceed
+            onClicked: page.proceedRequested()
         }
     }
 }
