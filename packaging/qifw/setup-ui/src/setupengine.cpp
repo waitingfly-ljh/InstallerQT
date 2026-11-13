@@ -1012,17 +1012,39 @@ void SetupEngine::repairUninstallRegistration()
         return;
 
     QString keyPath = marker.value(QStringLiteral("UninstallKey")).toString();
+    // Entries from earlier runs (QIFW's own key, an older self key) accumulate in Programs and Features;
+    // keep the registered one and drop every other entry that points at this install directory.
+    const QStringList existing = uninstallKeysFor(installDir);
     if (!keyPath.isEmpty()
-        && QSettings(keyPath, QSettings::NativeFormat).contains(QStringLiteral("UninstallString")))
-        return; // Registration is intact, nothing to do.
+        && QSettings(keyPath, QSettings::NativeFormat).contains(QStringLiteral("UninstallString"))) {
+        for (const QString &other : existing) {
+            if (other.compare(keyPath, Qt::CaseInsensitive) == 0)
+                continue;
+            deleteUninstallKey(other);
+            appendLog(QStringLiteral("Removed duplicate uninstall registration: %1").arg(other));
+        }
+        return; // Registration is intact, nothing else to do.
+    }
 
     const QString deployed = marker.value(QStringLiteral("Uninstaller")).toString();
     const bool haveDeployed = !deployed.isEmpty() && QFileInfo::exists(deployed);
 
     if (keyPath.isEmpty()) {
-        keyPath = QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{%1}")
-                      .arg(QUuid::createUuid().toString(QUuid::WithoutBraces).toUpper());
+        // Adopt an existing registration for this directory before minting a new GUID, so a repaired
+        // entry does not become yet another "OrbbecSlicer" row.
+        if (!existing.isEmpty()) {
+            keyPath = existing.first();
+        } else {
+            keyPath = QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{%1}")
+                          .arg(QUuid::createUuid().toString(QUuid::WithoutBraces).toUpper());
+        }
         marker.setValue(QStringLiteral("UninstallKey"), keyPath);
+    }
+    for (const QString &other : existing) {
+        if (other.compare(keyPath, Qt::CaseInsensitive) == 0)
+            continue;
+        deleteUninstallKey(other);
+        appendLog(QStringLiteral("Removed duplicate uninstall registration: %1").arg(other));
     }
     if (haveDeployed)
         marker.setValue(QStringLiteral("Uninstaller"), QDir::toNativeSeparators(deployed));
@@ -1050,6 +1072,69 @@ void SetupEngine::repairUninstallRegistration()
     entry.sync();
     marker.sync();
     appendLog(QStringLiteral("Restored missing uninstall registration: %1").arg(keyPath));
+}
+
+QStringList SetupEngine::uninstallKeysFor(const QString &installDir) const
+{
+    // Every install run used to leave its own Programs-and-Features key behind: QIFW writes one, the shell
+    // repurposes or creates another, and repairUninstallRegistration() can mint a third. Filtering by
+    // install directory is what makes it safe to collapse them into a single row.
+    const QString wantDir = QDir::cleanPath(QDir::fromNativeSeparators(installDir));
+    const QString wantTool = QDir::cleanPath(
+        QDir::fromNativeSeparators(QDir(installDir).filePath(QStringLiteral("maintenancetool.exe"))));
+    QStringList keys;
+    if (wantDir.isEmpty())
+        return keys;
+    const QStringList roots = {
+        QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall"),
+        QStringLiteral("HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall"),
+        QStringLiteral("HKEY_LOCAL_MACHINE\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall"),
+    };
+    for (const QString &root : roots) {
+        QSettings rootSettings(root, QSettings::NativeFormat);
+        for (const QString &group : rootSettings.childGroups()) {
+            const QString prefix = group + QLatin1Char('/');
+            if (rootSettings.value(prefix + QStringLiteral("DisplayName")).toString()
+                    .compare(QStringLiteral("OrbbecSlicer"), Qt::CaseInsensitive)
+                != 0)
+                continue;
+            const QString loc = QDir::cleanPath(QDir::fromNativeSeparators(
+                rootSettings.value(prefix + QStringLiteral("InstallLocation")).toString()));
+            const QString cmd = rootSettings.value(prefix + QStringLiteral("UninstallString")).toString();
+            const bool sameDir = loc.compare(wantDir, Qt::CaseInsensitive) == 0;
+            const bool sameCommand = cmd.contains(wantDir, Qt::CaseInsensitive)
+                                     || cmd.contains(wantTool, Qt::CaseInsensitive);
+            if (sameDir || sameCommand)
+                keys << root + QLatin1Char('\\') + group;
+        }
+    }
+    return keys;
+}
+
+void SetupEngine::deleteUninstallKey(const QString &keyPath)
+{
+#ifdef Q_OS_WIN
+    struct HivePrefix { const char *prefix; HKEY hive; };
+    const HivePrefix prefixes[] = {
+        {"HKEY_CURRENT_USER\\", HKEY_CURRENT_USER},
+        {"HKEY_LOCAL_MACHINE\\", HKEY_LOCAL_MACHINE},
+    };
+    for (const HivePrefix &p : prefixes) {
+        const QString prefix = QString::fromLatin1(p.prefix);
+        if (!keyPath.startsWith(prefix, Qt::CaseInsensitive))
+            continue;
+        const std::wstring sub = keyPath.mid(prefix.size()).toStdWString();
+        const LONG rc = RegDeleteKeyW(p.hive, sub.c_str());
+        appendLog(QStringLiteral("Deleting uninstall registration (%1): %2")
+                      .arg(rc == ERROR_SUCCESS ? QStringLiteral("succeeded")
+                                               : (rc == ERROR_FILE_NOT_FOUND ? QStringLiteral("already gone")
+                                                                            : QStringLiteral("failed %1").arg(rc)),
+                           keyPath));
+        return;
+    }
+#else
+    Q_UNUSED(keyPath)
+#endif
 }
 
 void SetupEngine::installUninstaller()
@@ -1101,29 +1186,18 @@ void SetupEngine::installUninstaller()
                      : QStringLiteral("\"%1\" --start-uninstaller").arg(uninstallerTarget);
     const QString quietString = uninstallString + QStringLiteral(" --silent");
 
-    // Find the QIFW-generated uninstall registration (matched by DisplayName + InstallLocation).
+    // Keep exactly one Programs-and-Features row per install directory: reuse the registration we already
+    // own (or QIFW's, which it writes on every install) and delete the leftovers from earlier runs. Without
+    // this the Control Panel listed two or three "OrbbecSlicer" rows after repeated installs.
+    QSettings marker(QStringLiteral("HKEY_CURRENT_USER\\Software\\Orbbec\\OrbbecSlicer"),
+                     QSettings::NativeFormat);
+    const QStringList existing = uninstallKeysFor(installDir);
+    const QString registered = marker.value(QStringLiteral("UninstallKey")).toString();
     QString keyPath;
-    const QStringList roots = {
-        QStringLiteral("HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall"),
-        QStringLiteral("HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall"),
-        QStringLiteral("HKEY_LOCAL_MACHINE\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall"),
-    };
-    const QString wantDir = QDir::cleanPath(QDir::fromNativeSeparators(installDir));
-    for (const QString &root : roots) {
-        QSettings rootSettings(root, QSettings::NativeFormat);
-        for (const QString &group : rootSettings.childGroups()) {
-            const QString display = rootSettings.value(group + QStringLiteral("/DisplayName")).toString();
-            const QString loc = rootSettings.value(group + QStringLiteral("/InstallLocation")).toString();
-            if (display.compare(QStringLiteral("OrbbecSlicer"), Qt::CaseInsensitive) != 0)
-                continue;
-            if (QDir::cleanPath(QDir::fromNativeSeparators(loc)).compare(wantDir, Qt::CaseInsensitive) != 0)
-                continue;
-            keyPath = root + QLatin1Char('\\') + group;
-            break;
-        }
-        if (!keyPath.isEmpty())
-            break;
-    }
+    if (!registered.isEmpty() && existing.contains(registered, Qt::CaseInsensitive))
+        keyPath = registered;
+    else if (!existing.isEmpty())
+        keyPath = existing.first();
 
     if (keyPath.isEmpty()) {
         // QIFW's key not found (e.g. old version/cleaned up): create our own and delete it on uninstall.
@@ -1141,6 +1215,12 @@ void SetupEngine::installUninstaller()
         k.setValue(QStringLiteral("Publisher"), QStringLiteral("Orbbec"));
         k.sync();
         appendLog(QStringLiteral("Created own uninstall registration (%1): %2").arg(hive, keyPath));
+    }
+    for (const QString &other : existing) {
+        if (other.compare(keyPath, Qt::CaseInsensitive) == 0)
+            continue;
+        deleteUninstallKey(other);
+        appendLog(QStringLiteral("Removed duplicate uninstall registration: %1").arg(other));
     }
     m_selfUninstallKey = keyPath;
 
@@ -1175,8 +1255,6 @@ void SetupEngine::installUninstaller()
     if (entry.status() != QSettings::NoError)
         appendLog(QStringLiteral("Failed to write uninstall registration (%1): %2").arg(int(entry.status())).arg(keyPath));
 
-    QSettings marker(QStringLiteral("HKEY_CURRENT_USER\\Software\\Orbbec\\OrbbecSlicer"),
-                     QSettings::NativeFormat);
     // Cache the installed version for readInstalled() (it also reads components.xml, this is the fast path).
     marker.setValue(QStringLiteral("Version"), productVersion);
     if (haveDeployed)

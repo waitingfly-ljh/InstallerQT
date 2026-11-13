@@ -97,6 +97,11 @@ private:
     void revertInstallOptions();
     // After a successful install/maintenance: deploy the branded uninstaller and rewrite the system uninstall registration and Start menu shortcut.
     void installUninstaller();
+    // Every Programs-and-Features key (HKCU/HKLM/WOW64) that belongs to installDir: DisplayName "OrbbecSlicer"
+    // and either InstallLocation == installDir or an uninstall command pointing into installDir.
+    QStringList uninstallKeysFor(const QString &installDir) const;
+    // Delete one Programs-and-Features key by full path (HKEY_...\Software\Microsoft\...\Uninstall\{GUID}).
+    void deleteUninstallKey(const QString &keyPath);
     // Startup self-check: recreate the Programs-and-Features entry when the recorded registration
     // is gone (external cleanup agents may drop it after a successful install).
     void repairUninstallRegistration();
